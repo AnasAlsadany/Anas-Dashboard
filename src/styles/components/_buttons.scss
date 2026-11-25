@@ -109,5 +109,9 @@ a.app-add-btn .pi {
 }
 
 .back-btn .p-button-icon {
+  transform: none;
+}
+
+.verify-form[dir='rtl'] .back-btn .p-button-icon {
   transform: rotate(-180deg);
 }

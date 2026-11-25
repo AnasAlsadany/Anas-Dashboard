@@ -9,6 +9,10 @@ export const en = {
   'common.loading': 'Loading',
   'common.empty': 'Nothing Here Yet',
   'common.error': 'Something Went Wrong',
+  'common.offlineTitle': 'No Internet Connection',
+  'common.offlineHint':
+    'Check Your Network Connection And Try Again. This Is Not An Empty Data State.',
+  'common.retry': 'Try Again',
   'common.close': 'Close',
   'common.save': 'Save',
   'common.saveChanges': 'Save Changes',

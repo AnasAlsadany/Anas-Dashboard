@@ -1,6 +1,7 @@
 export const en = {
   'auth.loginTitle': 'Sign In',
   'auth.email': 'Email',
+  'auth.emailPlaceholder': 'Enter Your Email',
   'auth.password': 'Password',
   'auth.passwordPlaceholder': 'Enter Your Password',
   'auth.remember': 'Remember Me',
@@ -13,8 +14,8 @@ export const en = {
   'auth.passwordRequired': 'Password Is Required',
   'auth.passwordShort': 'Password Is Too Short',
   'auth.forgotTitle': 'Forgot Your Password?',
-  'auth.forgotHint': 'Enter Your Email And We Will Send You A Verification Code.',
-  'auth.forgotSent': 'If This Email Is Registered, A Verification Code Will Be Sent.',
+  'auth.forgotHint': 'Enter Your Email And We Will Send A Password Recovery Request.',
+  'auth.forgotSent': 'A Recovery Request Was Sent For This Email.',
   'auth.send': 'Send',
   'auth.verifyTitle': 'Verification Code',
   'auth.verifyLabel': 'Verification Code',

@@ -156,7 +156,7 @@
 
 .project-tile__tags {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: stretch;
   gap: 8px;
   width: 100%;
@@ -167,7 +167,7 @@
 
 .project-tile__tags li {
   display: inline-flex;
-  flex: 1 1 0;
+  flex: 1 1 auto;
   align-items: center;
   justify-content: center;
   gap: 8px;

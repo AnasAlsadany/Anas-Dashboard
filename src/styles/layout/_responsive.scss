@@ -21,7 +21,6 @@
     inset-block: 8px;
     inset-inline-start: 8px;
     transform: translateX(-110%);
-    transition: transform var(--app-transition) var(--app-motion-ease);
   }
 
   [dir='rtl'] .sidebar {

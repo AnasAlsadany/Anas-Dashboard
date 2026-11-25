@@ -330,6 +330,27 @@ describe('ProductUpload', () => {
       expect(created).toBe(0);
     });
 
+    it('tells the user when a file is not a PNG or JPG instead of failing silently', () => {
+      const fixture = create();
+      pick(fixture, 'notes.txt', 'text/plain');
+      fixture.detectChanges();
+      expect(fixture.nativeElement.textContent).toContain('Only PNG Or JPG Images Are Supported');
+      pick(fixture, 'anim.gif', 'image/gif');
+      fixture.detectChanges();
+      expect(fixture.componentInstance.picked).toBeNull();
+      expect(created).toBe(0);
+      expect(fixture.nativeElement.textContent).toContain('Only PNG Or JPG Images Are Supported');
+    });
+
+    it('clears the type error after a valid image is picked', () => {
+      const fixture = create();
+      pick(fixture, 'notes.txt', 'text/plain');
+      fixture.detectChanges();
+      pick(fixture, 'ok.png', 'image/png');
+      fixture.detectChanges();
+      expect(fixture.nativeElement.textContent).not.toContain('Only PNG Or JPG');
+    });
+
     it('does not create or revoke anything for an oversized image', () => {
       const fixture = create((host) => {
         host.follow = true;

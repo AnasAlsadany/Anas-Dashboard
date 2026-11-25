@@ -247,6 +247,9 @@
                     <input pInputText dir="ltr" [fluid]="true" formControlName="slug" />
                     <p-inputicon class="pi pi-link" />
                   </p-iconfield>
+                  @if (slugInvalid()) {
+                    <app-field-error>{{ ct('knowledge.slugError') }}</app-field-error>
+                  }
                 </label>
 
                 <div class="field kb-editor__wide">

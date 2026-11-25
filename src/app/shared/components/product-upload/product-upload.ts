@@ -11,6 +11,7 @@ import {
 import type { AppLanguage } from '../../../core/i18n/language';
 import { LanguageService } from '../../../core/services/language.service';
 import { ICON_LIBRARY_IDS, iconLibrarySrc } from './icon-library';
+import { IMAGE_UPLOAD_TYPES } from '../../utils/image-upload';
 import { ObjectUrls } from './object-urls';
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -35,6 +36,7 @@ export class ProductUpload {
   readonly cleared = output<void>();
   protected readonly source = signal<'upload' | 'library'>('upload');
   protected readonly sizeError = signal(false);
+  protected readonly typeError = signal(false);
   protected readonly dragging = signal(false);
 
   protected readonly icons = ICON_LIBRARY_IDS;
@@ -104,15 +106,22 @@ export class ProductUpload {
     event.preventDefault();
     event.stopPropagation();
     this.sizeError.set(false);
+    this.typeError.set(false);
     this.replaceOwned('');
     this.source.set('upload');
     this.cleared.emit();
   }
 
   private acceptFile(file: File | undefined): void {
-    if (!file?.type.startsWith('image/')) {
+    if (!file) {
       return;
     }
+    if (!IMAGE_UPLOAD_TYPES.includes(file.type)) {
+      this.sizeError.set(false);
+      this.typeError.set(true);
+      return;
+    }
+    this.typeError.set(false);
     if (file.size > MAX_IMAGE_BYTES) {
       this.sizeError.set(true);
       return;
@@ -146,6 +155,7 @@ export class ProductUpload {
 
   protected pickIcon(icon: string): void {
     this.sizeError.set(false);
+    this.typeError.set(false);
     this.replaceOwned('');
     this.source.set('library');
     this.picked.emit({ name: icon, url: `icon:${icon}` });

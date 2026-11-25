@@ -716,6 +716,36 @@ describe('ProductEditor', () => {
     expect(editor.serverErrors()['sectors.0.image.ar']).toBeUndefined();
   });
 
+  it('shows a message and keeps the entered values when an image upload is rejected with 422', async () => {
+    const fixture = await render('edit', 'info-system');
+    const root: HTMLElement = fixture.nativeElement;
+    const editor = fixture.componentInstance;
+    const api = TestBed.inject(ProductsService);
+    const add = vi.spyOn(TestBed.inject(MessageService), 'add');
+    const nameBefore = editor.draft().name.ar;
+    const stepBefore = editor.step();
+    vi.spyOn(api, 'save').mockReturnValue(
+      throwError(
+        () =>
+          new ApiError(422, 'The file field must be a file of type: png, jpg, jpeg.', {
+            file: ['The file field must be a file of type: png, jpg, jpeg.'],
+          }),
+      ),
+    );
+
+    clickButton(root, 'حفظ كمسودة');
+    await settle(fixture);
+
+    expect(add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'error',
+        summary: 'The file field must be a file of type: png, jpg, jpeg.',
+      }),
+    );
+    expect(editor.draft().name.ar).toBe(nameBefore);
+    expect(editor.step()).toBe(stepBefore);
+  });
+
   it('blocks leaving the SEO step and publishing when slug or keywords are invalid', async () => {
     const fixture = await render('edit', 'info-system');
     const root: HTMLElement = fixture.nativeElement;

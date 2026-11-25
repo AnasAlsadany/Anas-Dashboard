@@ -63,3 +63,11 @@ export function collectArticleValidationIssues(
     switchTo: hereHasIssue ? undefined : activeSuffix === 'Ar' ? 'en' : 'ar',
   };
 }
+
+/** Same slug format the products and projects editors enforce; empty is allowed. */
+export const ARTICLE_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+export function isValidArticleSlug(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.length === 0 || ARTICLE_SLUG_PATTERN.test(trimmed);
+}

@@ -53,6 +53,16 @@
   direction: rtl;
 }
 
+// RTL: previous sits on the reading-start side (right) and next on the left,
+// next to the page numbers that already read right to left.
+[dir='rtl'] .app-paginator .p-paginator-prev {
+  order: 3;
+}
+
+[dir='rtl'] .app-paginator .p-paginator-next {
+  order: 1;
+}
+
 .app-paginator .p-paginator-next {
   order: 3;
 }

@@ -35,4 +35,11 @@ describe('API timestamps', () => {
     expect(formatIsoTime('2026-03-05', 'en')).toBe('');
     expect(formatIsoDate('not a date', 'en')).toBe('');
   });
+
+  it('returns empty text for a null or missing timestamp instead of throwing', () => {
+    expect(formatIsoDate(null, 'en')).toBe('');
+    expect(formatIsoDate(undefined, 'ar')).toBe('');
+    expect(formatIsoTime(null, 'en')).toBe('');
+    expect(formatIsoTime(undefined, 'ar')).toBe('');
+  });
 });

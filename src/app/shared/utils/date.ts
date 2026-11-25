@@ -16,7 +16,10 @@ export function hasTimePart(value: string): boolean {
   return DATE_TIME_PATTERN.test(value);
 }
 
-export function formatIsoDate(value: string, locale: string): string {
+export function formatIsoDate(value: string | null | undefined, locale: string): string {
+  if (!value) {
+    return '';
+  }
   const date = hasTimePart(value) ? new Date(value) : fromIsoDate(value);
   if (Number.isNaN(date.getTime())) {
     return '';
@@ -28,8 +31,8 @@ export function formatIsoDate(value: string, locale: string): string {
   });
 }
 
-export function formatIsoTime(value: string, locale: string): string {
-  if (!hasTimePart(value)) {
+export function formatIsoTime(value: string | null | undefined, locale: string): string {
+  if (!value || !hasTimePart(value)) {
     return '';
   }
   const date = new Date(value);

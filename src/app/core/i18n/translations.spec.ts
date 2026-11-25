@@ -18,7 +18,7 @@ describe('translations', () => {
     expect(TRANSLATIONS['app.name']?.en).toBeTruthy();
     expect(TRANSLATIONS['nav.home']?.ar).toBeTruthy();
     expect(TRANSLATIONS['nav.home']?.en).toBeTruthy();
-    expect(TRANSLATIONS['seo.title']).toEqual({ ar: 'إعدادات SEO', en: 'SEO settings' });
+    expect(TRANSLATIONS['seo.title']).toEqual({ ar: 'إعدادات SEO', en: 'SEO Settings' });
     expect(TRANSLATIONS['nav.seo']?.ar).toBe('إعدادات SEO');
   });
 

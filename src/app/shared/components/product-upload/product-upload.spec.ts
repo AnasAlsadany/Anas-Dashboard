@@ -111,7 +111,7 @@ describe('ProductUpload', () => {
     fixture.detectChanges();
 
     expect(fixture.componentInstance.picked).toBeNull();
-    expect(fixture.nativeElement.textContent).toContain('exceeds the 5 MB limit');
+    expect(fixture.nativeElement.textContent).toContain('Exceeds The 5 MB Limit');
     expect(fixture.componentInstance.url).toBe('https://example.com/keep.jpg');
   });
 

@@ -129,7 +129,7 @@ describe('ServiceEditor', () => {
       }
       await settle(fixture);
       expect(root.querySelector('app-service-project-card')).toBeNull();
-      expect(root.textContent).toContain('No projects available to choose from.');
+      expect(root.textContent).toContain('No Projects Available To Choose From.');
     });
   });
 

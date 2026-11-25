@@ -108,7 +108,7 @@ describe('ServiceEditor', () => {
       clickNext(root);
       fixture.detectChanges();
       expect(root.querySelector('app-field-error')?.textContent).toContain(
-        'This field is required.',
+        'This Field Is Required.',
       );
     });
 

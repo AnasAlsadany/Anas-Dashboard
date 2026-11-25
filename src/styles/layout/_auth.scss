@@ -70,6 +70,7 @@
 }
 
 .auth-panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   // Center the form so left/right inset matches Figma’s equal 52px padding.
@@ -446,4 +447,15 @@
 .auth-success__action {
   margin-top: 10px;
   width: 100%;
+}
+
+// Language switch for widths where the brand panel (and its pill) is hidden.
+.lang-pill--compact {
+  display: none;
+  position: absolute;
+  top: 16px;
+  inset-inline-end: 16px;
+  z-index: 2;
+  background: #fff;
+  box-shadow: 0 2px 10px rgb(15 36 66 / 12%);
 }

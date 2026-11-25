@@ -108,9 +108,9 @@ describe('ProductEditor', () => {
     expect(document.documentElement.dir).toBe('rtl');
     expect(root.querySelector('.editor-card')?.getAttribute('dir')).toBe('ltr');
     expect(root.textContent).toContain('إضافة منتج جديد');
-    expect(root.textContent).toContain('Product title');
-    expect(root.textContent).toContain('Product features');
-    expect(root.textContent).toContain('Add a feature');
+    expect(root.textContent).toContain('Product Title');
+    expect(root.textContent).toContain('Product Features');
+    expect(root.textContent).toContain('Add A Feature');
   });
 
   it('uses tabs on the edit flow and keeps the product name', async () => {
@@ -661,7 +661,7 @@ describe('ProductEditor', () => {
     expect(editor.locale()).toBe('en');
     expect(editor.step()).toBe(0);
     expect(editor.summaryInvalid()).toBe(true);
-    expect(root.textContent).toContain('Short description must not exceed 300 characters.');
+    expect(root.textContent).toContain('Short Description Must Not Exceed 300 Characters.');
   });
 
   it('maps 422 field errors to nested UI fields, navigates to the step, and clears them on edit', async () => {
@@ -806,7 +806,7 @@ describe('ProductEditor', () => {
     expect(editor.step()).toBe(7);
     expect(editor.locale()).toBe('en');
     expect(editor.keywordsInvalid()).toBe(true);
-    expect(root.textContent).toContain('Each keyword must not exceed 50 characters.');
+    expect(root.textContent).toContain('Each Keyword Must Not Exceed 50 Characters.');
   });
 
   it('blocks navigation and save for incomplete workflow steps without discarding partial input', async () => {

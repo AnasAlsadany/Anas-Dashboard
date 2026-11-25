@@ -1,7 +1,18 @@
-<article class="service-card" (click)="openFromCard($event)">
+<article
+  class="service-card"
+  role="link"
+  tabindex="0"
+  (click)="openFromCard($event)"
+  (keydown.enter)="openFromCard($event)"
+  (keydown.space)="$event.preventDefault(); openFromCard($event)"
+>
   <div class="service-card__top">
     <span class="service-card__icon" aria-hidden="true">
-      <i [class]="iconClass()"></i>
+      @if (mediaIcon(); as src) {
+        <img [src]="src" alt="" />
+      } @else {
+        <i [class]="iconClass()"></i>
+      }
     </span>
     @if (showEdit() || showDelete()) {
       <span class="service-card__actions">

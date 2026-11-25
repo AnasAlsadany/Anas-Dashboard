@@ -22,7 +22,7 @@
       *appHasPermission="'knowledge_center.create'"
       icon="pi pi-plus"
       iconPos="end"
-      styleClass="knowledge-board__add"
+      styleClass="app-add-btn"
       [label]="addLabel()"
       (clicked)="add()"
     />
@@ -32,13 +32,18 @@
 
   @if (state() === 'loading') {
     <app-state-view mode="loading" />
-  } @else if (state() === 'error') {
-    <app-state-view mode="error" [message]="lang.t('knowledge.loadError')" (retry)="reload()" />
+  } @else if (state() === 'error' || state() === 'offline') {
+    <app-state-view
+      [mode]="state() === 'offline' ? 'offline' : 'error'"
+      [message]="lang.t('knowledge.loadError')"
+      (retry)="reload()"
+    />
   } @else {
     <div [hidden]="tab() !== 'articles'">
       <app-knowledge-articles-panel
         [articles]="filteredArticles()"
         [categories]="categories()"
+        [stats]="stats()"
         [showEdit]="canUpdate()"
         [showDelete]="canDelete()"
         (view)="view($event)"
@@ -46,7 +51,7 @@
         (remove)="removeArticle($event)"
         (toggleFeatured)="toggleFeatured($event)"
         (statusChange)="changeStatus($event)"
-        (exported)="exported($event)"
+        (exported)="exported()"
       />
     </div>
     <div [hidden]="tab() !== 'categories'">

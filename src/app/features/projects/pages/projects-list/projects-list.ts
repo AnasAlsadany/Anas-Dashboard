@@ -14,20 +14,24 @@ import { MessageService } from 'primeng/api';
 import { type PaginatorState } from 'primeng/paginator';
 import { ToggleSwitch } from 'primeng/toggleswitch';
 
+import { forkJoin } from 'rxjs';
+
 import { AuthService } from '../../../../core/auth/auth.service';
+import { loadFailureStatus } from '../../../../core/http/api-error';
 import { LanguageService } from '../../../../core/services/language.service';
+import { NetworkStatusService } from '../../../../core/services/network-status.service';
 import { AppPaginator } from '../../../../shared/components/app-paginator/app-paginator';
 import { ConfirmDialog } from '../../../../shared/components/confirm-dialog/confirm-dialog';
 import { PageHeader } from '../../../../shared/components/page-header/page-header';
 import { StateView } from '../../../../shared/components/state-view/state-view';
 import { HasPermissionDirective } from '../../../../shared/directives/has-permission.directive';
-import { readLocale, type Project } from '../../models/project.model';
+import { readLocale, readMedia, type Project } from '../../models/project.model';
 import { ProjectsService } from '../../services/projects.service';
 
-type LoadState = 'loading' | 'ready' | 'error';
+type LoadState = 'loading' | 'ready' | 'error' | 'offline';
 
 @Component({
-  selector: 'app-projects-page',
+  selector: 'app-projects-list',
   imports: [
     FormsModule,
     PageHeader,
@@ -42,10 +46,11 @@ type LoadState = 'loading' | 'ready' | 'error';
   styleUrl: './projects-list.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class ProjectsPage {
+export class ProjectsList {
   private readonly messages = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly auth = inject(AuthService);
+  private readonly network = inject(NetworkStatusService);
   private readonly confirm = viewChild.required(ConfirmDialog);
   readonly lang = inject(LanguageService);
   readonly api = inject(ProjectsService);
@@ -79,18 +84,20 @@ export class ProjectsPage {
     return readLocale(project.summary, this.lang.language()) || project.summary.ar;
   }
 
-  protected coverSrc(url: string): string {
-    const value = url.trim();
+  protected coverSrc(project: Project): string {
+    const value = readMedia(project.cover, this.lang.language()).imageUrl.trim();
     return value.length > 0 && !value.startsWith('icon:') ? value : '';
   }
 
   protected tags(project: Project): { icon: string; label: string }[] {
-    return project.categories.slice(0, 4).map((category) => ({
-      icon: category.imageUrl.startsWith('icon:')
-        ? `pi ${category.imageUrl.slice(5)}`
-        : 'pi pi-tag',
-      label: readLocale(category.title, this.lang.language()) || category.title.ar,
-    }));
+    const language = this.lang.language();
+    return project.categories.slice(0, 4).map((category) => {
+      const url = readMedia(category.image, language).imageUrl;
+      return {
+        icon: url.startsWith('icon:') ? `pi ${url.slice(5)}` : 'pi pi-tag',
+        label: readLocale(category.title, language) || category.title.ar,
+      };
+    });
   }
 
   protected page(event: PaginatorState): void {
@@ -99,7 +106,22 @@ export class ProjectsPage {
   }
 
   protected publish(id: string, published: boolean): void {
-    this.api.setPublished(id, published);
+    this.api
+      .setPublished(id, published)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (saved) => {
+          this.items.update((items) =>
+            items.map((item) => (item.id === id ? { ...item, published: saved.published } : item)),
+          );
+        },
+        error: () => {
+          this.items.update((items) =>
+            items.map((item) => (item.id === id ? { ...item, published: !published } : item)),
+          );
+          this.messages.add({ severity: 'error', summary: this.lang.t('common.error') });
+        },
+      });
     this.items.update((items) =>
       items.map((item) => (item.id === id ? { ...item, published } : item)),
     );
@@ -138,22 +160,27 @@ export class ProjectsPage {
   private load(): void {
     const seq = ++this.loadSeq;
     this.status.set('loading');
-    this.api
-      .list()
+    forkJoin({
+      items: this.api.listAll(),
+      visible: this.api.loadCatalogVisibility(),
+    })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: (items) => {
+        next: ({ items }) => {
           if (seq !== this.loadSeq) {
             return;
           }
           this.items.set(items);
           this.status.set('ready');
         },
-        error: () => {
+        error: (error: unknown) => {
           if (seq !== this.loadSeq) {
             return;
           }
-          this.status.set('error');
+          if (this.items().length > 0) {
+            return;
+          }
+          this.status.set(loadFailureStatus(error, this.network.online()));
         },
       });
   }

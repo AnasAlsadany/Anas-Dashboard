@@ -16,26 +16,67 @@ import { MessageService } from 'primeng/api';
 import { catchError, finalize, map, of, switchMap } from 'rxjs';
 
 import type { AppLanguage } from '../../../../core/i18n/translations';
+import { loadFailureStatus } from '../../../../core/http/api-error';
 import { LanguageService } from '../../../../core/services/language.service';
+import { NetworkStatusService } from '../../../../core/services/network-status.service';
 import {
   EditorShell,
   type EditorShellLabels,
 } from '../../../../shared/components/editor-shell/editor-shell';
-import type { Project } from '../../../projects/models/project.model';
+import { readMedia, type Project } from '../../../projects/models/project.model';
 import { ProjectsService } from '../../../projects/services/projects.service';
 import {
   SERVICE_STEPS,
   blankService,
   readLocale,
-  serviceFaq,
-  servicePoint,
-  serviceSector,
-  serviceWhyItem,
   type LocaleText,
   type Service,
 } from '../../models/service.model';
 import { ObjectUrls } from '../../../../shared/components/product-upload/object-urls';
 import { ServicesService } from '../../services/services.service';
+import {
+  type ServicePageStatus,
+  type ServiceProjectsStatus,
+} from '../../constants/service.constants';
+import {
+  draftAddFaq,
+  draftAddPoint,
+  draftAddSector,
+  draftAddWhy,
+  draftClearPointImage,
+  draftClearSectorImage,
+  draftClearWhyIcon,
+  draftClearWhyImage,
+  draftRemoveFaq,
+  draftRemovePoint,
+  draftRemoveSector,
+  draftRemoveWhy,
+  draftSetFaq,
+  draftSetField,
+  draftSetPoint,
+  draftSetPointImage,
+  draftSetProject,
+  draftSetSectorImage,
+  draftSetWhyIcon,
+  draftSetWhyImage,
+  draftSetWhyImageTitle,
+  draftSetWhyTitle,
+  type ServiceImageFile,
+  type ServicePointList,
+} from '../../utils/service-draft';
+import {
+  createModeEditorState,
+  editLoadSuccessState,
+  type ServiceEditorLoadState,
+} from '../../utils/service-editor-load';
+import {
+  decideNextStep,
+  decidePreviousStep,
+  decideSelectStep,
+  type ServiceEditorNavDecision,
+  type ServiceEditorNavInput,
+} from '../../utils/service-editor-navigation';
+import { evaluateServicePersist } from '../../utils/service-editor-persist';
 import {
   FaqStep,
   FeaturesStep,
@@ -46,8 +87,7 @@ import {
   WhyStep,
 } from './steps/service-steps';
 
-export type ServicePointList = 'solutions' | 'stages' | 'features';
-export interface ServiceImageFile { name: string; url: string }
+export type { ServicePointList, ServiceImageFile };
 
 @Component({
   selector: 'app-service-editor',
@@ -74,6 +114,7 @@ export class ServiceEditor {
   private readonly route = inject(ActivatedRoute);
   private readonly messages = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly network = inject(NetworkStatusService);
   readonly lang = inject(LanguageService);
 
   readonly id = input('');
@@ -82,14 +123,14 @@ export class ServiceEditor {
   readonly step = signal(0);
   readonly passed = signal(-1);
   readonly draft = signal<Service>(blankService());
-  readonly status = signal<'loading' | 'ready' | 'missing' | 'error'>(
+  readonly status = signal<ServicePageStatus>(
     this.route.snapshot.data['mode'] === 'edit' ? 'loading' : 'ready',
   );
   readonly saving = signal(false);
   readonly nameError = signal(false);
 
   readonly projects = signal<Project[]>([]);
-  readonly projectsStatus = signal<'loading' | 'ready' | 'error'>('loading');
+  readonly projectsStatus = signal<ServiceProjectsStatus>('loading');
   private readonly reload = signal(0);
 
   readonly mode = toSignal(
@@ -123,7 +164,6 @@ export class ServiceEditor {
   );
 
   constructor() {
-
     this.destroyRef.onDestroy(() => this.objectUrls.abandon(this.draft()));
 
     effect(() => {
@@ -132,11 +172,7 @@ export class ServiceEditor {
         if (editing) {
           return;
         }
-        this.status.set('ready');
-        this.draft.set(blankService());
-        this.step.set(0);
-        this.passed.set(-1);
-        this.nameError.set(false);
+        this.applyLoadState(createModeEditorState());
       });
     });
 
@@ -148,8 +184,8 @@ export class ServiceEditor {
           }
           this.status.set('loading');
           return this.api.get(request.id).pipe(
-            map((service) => ({ failed: false as const, service })),
-            catchError(() => of({ failed: true as const, service: null })),
+            map((service) => ({ failed: false as const, service, error: null as unknown })),
+            catchError((error: unknown) => of({ failed: true as const, service: null, error })),
           );
         }),
         takeUntilDestroyed(),
@@ -159,18 +195,14 @@ export class ServiceEditor {
           return;
         }
         if (result.failed) {
-          this.status.set('error');
+          this.status.set(loadFailureStatus(result.error, this.network.online()));
           return;
         }
         if (!result.service) {
           this.status.set('missing');
           return;
         }
-        this.draft.set(result.service);
-        this.step.set(0);
-        this.passed.set(-1);
-        this.nameError.set(false);
-        this.status.set('ready');
+        this.applyLoadState(editLoadSuccessState(result.service));
       });
 
     this.loadProjects();
@@ -204,39 +236,25 @@ export class ServiceEditor {
           this.projects.set(projects);
           this.projectsStatus.set('ready');
         },
-        error: () => this.projectsStatus.set('error'),
+        error: (error: unknown) => {
+          if (this.projects().length > 0) {
+            return;
+          }
+          this.projectsStatus.set(loadFailureStatus(error, this.network.online()));
+        },
       });
   }
 
   select(index: number | undefined): void {
-    if (this.saving() || index === undefined || (this.mode() === 'create' && index > this.step())) {
-      return;
-    }
-    this.step.set(index);
+    this.applyNavDecision(decideSelectStep(this.navInput(), index));
   }
 
   next(): void {
-    if (this.saving() || this.lastStep()) {
-      return;
-    }
-    if (this.mode() === 'create' && this.step() === 0 && !this.namesValid()) {
-      this.nameError.set(true);
-      return;
-    }
-    const leaving = this.step();
-    this.passed.update((current) => Math.max(current, leaving));
-    this.step.set(leaving + 1);
+    this.applyNavDecision(decideNextStep(this.navInput()));
   }
 
   previous(): void {
-    if (this.saving()) {
-      return;
-    }
-    if (this.step() === 0) {
-      void this.router.navigate(['/services']);
-      return;
-    }
-    this.step.update((current) => current - 1);
+    this.applyNavDecision(decidePreviousStep(this.navInput()));
   }
 
   saveDraft(): void {
@@ -260,31 +278,18 @@ export class ServiceEditor {
     if (value === undefined) {
       return;
     }
-    this.draft.update((current) => ({
-      ...current,
-      [key]: this.writeLocale(current[key], value),
-    }));
+    this.draft.update((current) => draftSetField(current, key, this.locale(), value));
     if (key === 'name') {
       this.nameError.set(false);
     }
   }
 
-  setIcon(icon: string): void {
-    this.draft.update((current) => ({ ...current, icon }));
-  }
-
   setWhyImage(file: ServiceImageFile): void {
-    this.draft.update((current) => ({
-      ...current,
-      whyImage: this.withImage(current.whyImage, file),
-    }));
+    this.draft.update((current) => draftSetWhyImage(current, this.locale(), file));
   }
 
   clearWhyImage(): void {
-    this.draft.update((current) => ({
-      ...current,
-      whyImage: { ...current.whyImage, imageName: '', imageUrl: '' },
-    }));
+    this.draft.update((current) => draftClearWhyImage(current, this.locale()));
   }
 
   setWhyImageTitle(event: Event): void {
@@ -292,13 +297,7 @@ export class ServiceEditor {
     if (value === undefined) {
       return;
     }
-    this.draft.update((current) => ({
-      ...current,
-      whyImage: {
-        ...current.whyImage,
-        title: this.writeLocale(current.whyImage.title, value),
-      },
-    }));
+    this.draft.update((current) => draftSetWhyImageTitle(current, this.locale(), value));
   }
 
   setWhyTitle(index: number, event: Event): void {
@@ -306,38 +305,23 @@ export class ServiceEditor {
     if (value === undefined) {
       return;
     }
-    this.draft.update((current) => ({
-      ...current,
-      whyItems: this.patchLocaleField(current.whyItems, index, 'title', value),
-    }));
+    this.draft.update((current) => draftSetWhyTitle(current, index, this.locale(), value));
   }
 
   setWhyIcon(index: number, file: ServiceImageFile): void {
-    this.draft.update((current) => ({
-      ...current,
-      whyItems: this.mapAt(current.whyItems, index, (item) => this.withImage(item, file)),
-    }));
+    this.draft.update((current) => draftSetWhyIcon(current, index, this.locale(), file));
   }
 
   clearWhyIcon(index: number): void {
-    this.draft.update((current) => ({
-      ...current,
-      whyItems: this.mapAt(current.whyItems, index, (item) => this.withoutImage(item)),
-    }));
+    this.draft.update((current) => draftClearWhyIcon(current, index, this.locale()));
   }
 
   addWhy(): void {
-    this.draft.update((current) => ({
-      ...current,
-      whyItems: [...current.whyItems, serviceWhyItem()],
-    }));
+    this.draft.update((current) => draftAddWhy(current));
   }
 
   removeWhy(index: number): void {
-    this.draft.update((current) => ({
-      ...current,
-      whyItems: this.withoutAt(current.whyItems, index),
-    }));
+    this.draft.update((current) => draftRemoveWhy(current, index));
   }
 
   setPoint(list: ServicePointList, index: number, field: 'title' | 'body', event: Event): void {
@@ -345,32 +329,25 @@ export class ServiceEditor {
     if (value === undefined) {
       return;
     }
-    this.draft.update((current) => ({
-      ...current,
-      [list]: this.patchLocaleField(current[list], index, field, value),
-    }));
+    this.draft.update((current) =>
+      draftSetPoint(current, list, index, field, this.locale(), value),
+    );
   }
 
   addPoint(list: ServicePointList): void {
-    this.draft.update((current) => ({ ...current, [list]: [...current[list], servicePoint()] }));
+    this.draft.update((current) => draftAddPoint(current, list));
   }
 
   removePoint(list: ServicePointList, index: number): void {
-    this.draft.update((current) => ({ ...current, [list]: this.withoutAt(current[list], index) }));
+    this.draft.update((current) => draftRemovePoint(current, list, index));
   }
 
   setPointImage(list: ServicePointList, index: number, file: ServiceImageFile): void {
-    this.draft.update((current) => ({
-      ...current,
-      [list]: this.mapAt(current[list], index, (item) => this.withImage(item, file)),
-    }));
+    this.draft.update((current) => draftSetPointImage(current, list, index, this.locale(), file));
   }
 
   clearPointImage(list: ServicePointList, index: number): void {
-    this.draft.update((current) => ({
-      ...current,
-      [list]: this.mapAt(current[list], index, (item) => this.withoutImage(item)),
-    }));
+    this.draft.update((current) => draftClearPointImage(current, list, index, this.locale()));
   }
 
   stageLabel(index: number): string {
@@ -385,39 +362,28 @@ export class ServiceEditor {
     return this.draft().projectIds.includes(projectId);
   }
 
+  projectCoverUrl(project: Project): string {
+    return readMedia(project.cover, this.locale()).imageUrl;
+  }
+
   setProject(projectId: string, selected: boolean): void {
-    this.draft.update((current) => {
-      const without = current.projectIds.filter((item) => item !== projectId);
-      return { ...current, projectIds: selected ? [...without, projectId] : without };
-    });
+    this.draft.update((current) => draftSetProject(current, projectId, selected));
   }
 
   addSector(): void {
-    this.draft.update((current) => ({
-      ...current,
-      sectors: [...current.sectors, serviceSector()],
-    }));
+    this.draft.update((current) => draftAddSector(current));
   }
 
   removeSector(index: number): void {
-    this.draft.update((current) => ({
-      ...current,
-      sectors: this.withoutAt(current.sectors, index),
-    }));
+    this.draft.update((current) => draftRemoveSector(current, index));
   }
 
   setSectorImage(index: number, file: ServiceImageFile): void {
-    this.draft.update((current) => ({
-      ...current,
-      sectors: this.mapAt(current.sectors, index, (item) => this.withImage(item, file)),
-    }));
+    this.draft.update((current) => draftSetSectorImage(current, index, this.locale(), file));
   }
 
   clearSectorImage(index: number): void {
-    this.draft.update((current) => ({
-      ...current,
-      sectors: this.mapAt(current.sectors, index, (item) => this.withoutImage(item)),
-    }));
+    this.draft.update((current) => draftClearSectorImage(current, index, this.locale()));
   }
 
   setFaq(index: number, field: 'question' | 'answer', event: Event): void {
@@ -425,18 +391,15 @@ export class ServiceEditor {
     if (value === undefined) {
       return;
     }
-    this.draft.update((current) => ({
-      ...current,
-      faqs: this.patchLocaleField(current.faqs, index, field, value),
-    }));
+    this.draft.update((current) => draftSetFaq(current, index, field, this.locale(), value));
   }
 
   addFaq(): void {
-    this.draft.update((current) => ({ ...current, faqs: [...current.faqs, serviceFaq()] }));
+    this.draft.update((current) => draftAddFaq(current));
   }
 
   removeFaq(index: number): void {
-    this.draft.update((current) => ({ ...current, faqs: this.withoutAt(current.faqs, index) }));
+    this.draft.update((current) => draftRemoveFaq(current, index));
   }
 
   private persist(
@@ -444,20 +407,22 @@ export class ServiceEditor {
     message: 'service.saved' | 'service.draftSaved',
     leave: boolean,
   ): void {
-
-    if (this.saving() || this.status() !== 'ready') {
+    const evaluation = evaluateServicePersist(this.draft(), published, {
+      saving: this.saving(),
+      status: this.status(),
+      projects: this.projects(),
+      projectsStatus: this.projectsStatus(),
+    });
+    if (evaluation.kind === 'busy') {
       return;
     }
-    if (published && !this.namesValid()) {
+    if (evaluation.kind === 'nameError') {
       this.nameError.set(true);
-      this.step.set(0);
+      this.step.set(evaluation.step);
       return;
     }
-    const current: Service = {
-      ...this.draft(),
-      published,
-      projectIds: this.knownProjectIds(),
-    };
+
+    const current = evaluation.service;
     this.saving.set(true);
     this.api
       .save(current)
@@ -467,6 +432,7 @@ export class ServiceEditor {
       )
       .subscribe({
         next: (saved) => {
+          this.objectUrls.sync(current, saved);
           this.draft.set(saved);
           this.nameError.set(false);
           this.messages.add({ severity: 'success', summary: this.lang.t(message) });
@@ -480,18 +446,41 @@ export class ServiceEditor {
       });
   }
 
-  private knownProjectIds(): string[] {
-    const ids = this.draft().projectIds;
-    if (this.projectsStatus() !== 'ready') {
-      return [...ids];
-    }
-    const known = new Set(this.projects().map((project) => project.id));
-    return ids.filter((id) => known.has(id));
+  private navInput(): ServiceEditorNavInput {
+    return {
+      mode: this.mode() === 'edit' ? 'edit' : 'create',
+      saving: this.saving(),
+      step: this.step(),
+      draft: this.draft(),
+    };
   }
 
-  private namesValid(): boolean {
-    const { name } = this.draft();
-    return name.ar.trim().length > 0 && name.en.trim().length > 0;
+  private applyNavDecision(decision: ServiceEditorNavDecision): void {
+    switch (decision.kind) {
+      case 'noop':
+        return;
+      case 'nameError':
+        this.nameError.set(true);
+        return;
+      case 'navigateList':
+        void this.router.navigate(['/services']);
+        return;
+      case 'setStep':
+        this.step.set(decision.step);
+        return;
+      case 'advance':
+        this.passed.update((current) => Math.max(current, decision.from));
+        this.step.set(decision.from + 1);
+        return;
+    }
+  }
+
+  private applyLoadState(state: ServiceEditorLoadState): void {
+    this.draft.set(state.draft);
+    this.step.set(state.step);
+    this.passed.set(state.passed);
+    this.nameError.set(state.nameError);
+    this.status.set(state.status);
   }
 
   private read(event: Event): string | undefined {
@@ -500,40 +489,5 @@ export class ServiceEditor {
       return target.value;
     }
     return undefined;
-  }
-
-  private writeLocale(current: LocaleText, value: string): LocaleText {
-    return { ...current, [this.locale()]: value };
-  }
-
-  private mapAt<T>(items: readonly T[], index: number, update: (item: T) => T): T[] {
-    return items.map((item, itemIndex) => (itemIndex === index ? update(item) : item));
-  }
-
-  private withoutAt<T>(items: readonly T[], index: number): T[] {
-    return items.length > 1 ? items.filter((_, item) => item !== index) : [...items];
-  }
-
-  private patchLocaleField<T extends Record<K, LocaleText>, K extends keyof T>(
-    items: readonly T[],
-    index: number,
-    field: K,
-    value: string,
-  ): T[] {
-    return this.mapAt(items, index, (item) => ({
-      ...item,
-      [field]: this.writeLocale(item[field], value),
-    }));
-  }
-
-  private withImage<T extends { imageName: string; imageUrl: string }>(
-    item: T,
-    file: ServiceImageFile,
-  ): T {
-    return { ...item, imageName: file.name, imageUrl: file.url };
-  }
-
-  private withoutImage<T extends { imageName: string; imageUrl: string }>(item: T): T {
-    return { ...item, imageName: '', imageUrl: '' };
   }
 }

@@ -18,7 +18,9 @@ import { catchError, map, of, switchMap } from 'rxjs';
 
 import { AuthService } from '../../../../core/auth/auth.service';
 import { BreadcrumbService } from '../../../../core/services/breadcrumb.service';
+import { loadFailureStatus } from '../../../../core/http/api-error';
 import { LanguageService } from '../../../../core/services/language.service';
+import { NetworkStatusService } from '../../../../core/services/network-status.service';
 import { AppButton } from '../../../../shared/components/app-button/app-button';
 import { ConfirmDialog } from '../../../../shared/components/confirm-dialog/confirm-dialog';
 import { InfoField } from '../../../../shared/components/info-field/info-field';
@@ -27,26 +29,31 @@ import { PageTabs, type PageTab } from '../../../../shared/components/page-tabs/
 import { SectorCard } from '../../../../shared/components/sector-card/sector-card';
 import { StateView } from '../../../../shared/components/state-view/state-view';
 import { HasPermissionDirective } from '../../../../shared/directives/has-permission.directive';
-import type { Project } from '../../../projects/models/project.model';
+import {
+  readMedia as readProjectMedia,
+  type Project,
+} from '../../../projects/models/project.model';
 import { ProjectsService } from '../../../projects/services/projects.service';
 import { ServiceProjectCard } from '../../components/service-project-card/service-project-card';
 import {
   SERVICE_STEPS,
   readLocale,
+  readMedia,
   type LocaleText,
+  type LocalizedMedia,
   type Service,
   type ServiceImage,
+  type ServiceSector,
 } from '../../models/service.model';
 import { ServicesService } from '../../services/services.service';
+import {
+  type ServicePageStatus,
+  type ServiceProjectsStatus,
+} from '../../constants/service.constants';
+import { filledLocale } from '../../utils/service-locale';
+import { serviceIconClass, serviceVisual, type ServiceVisual } from '../../utils/service-visual';
 
-const FALLBACK_ICON = 'pi-cog';
-
-const ICON_CLASS = /^pi-[a-z0-9-]+$/;
-
-export interface ServiceVisual {
-  icon: string;
-  image: string;
-}
+export type { ServiceVisual };
 
 @Component({
   selector: 'app-service-detail',
@@ -76,14 +83,15 @@ export class ServiceDetailPage {
   private readonly breadcrumbs = inject(BreadcrumbService);
   private readonly auth = inject(AuthService);
   private readonly confirm = viewChild.required(ConfirmDialog);
+  private readonly network = inject(NetworkStatusService);
   readonly lang = inject(LanguageService);
 
   readonly id = input('');
   readonly item = signal<Service | null>(null);
-  readonly status = signal<'loading' | 'ready' | 'missing' | 'error'>('loading');
+  readonly status = signal<ServicePageStatus>('loading');
   readonly tab = signal<string>(SERVICE_STEPS[0].id);
   readonly projects = signal<Project[]>([]);
-  readonly projectsStatus = signal<'loading' | 'ready' | 'error'>('loading');
+  readonly projectsStatus = signal<ServiceProjectsStatus>('loading');
   private readonly reload = signal(0);
 
   readonly tabs: readonly PageTab[] = [
@@ -115,7 +123,10 @@ export class ServiceDetailPage {
   });
 
   protected readonly whyItems = computed(() =>
-    (this.item()?.whyItems ?? []).filter((entry) => this.filled(entry.title) || entry.imageUrl),
+    (this.item()?.whyItems ?? []).filter((entry) => {
+      const media = readMedia(entry.image, this.lang.language());
+      return filledLocale(entry.title) || !!media.imageUrl;
+    }),
   );
   protected readonly whyImage = computed(() => this.item()?.whyImage ?? null);
   protected readonly solutions = computed(() => this.points('solutions'));
@@ -123,31 +134,55 @@ export class ServiceDetailPage {
 
   protected readonly features = computed(() =>
     (this.item()?.features ?? []).filter(
-      (entry) => this.filled(entry.title) || this.filled(entry.body),
+      (entry) => filledLocale(entry.title) || filledLocale(entry.body),
     ),
   );
 
   protected readonly sectors = computed(() =>
-    (this.item()?.sectors ?? []).filter((entry) => this.visual(entry).image),
+    (this.item()?.sectors ?? []).filter((entry) => this.visual(this.sectorMedia(entry)).image),
   );
   protected readonly faqs = computed(() =>
     (this.item()?.faqs ?? []).filter(
-      (entry) => this.filled(entry.question) || this.filled(entry.answer),
+      (entry) => filledLocale(entry.question) || filledLocale(entry.answer),
     ),
   );
 
   protected readonly relatedProjects = computed(() => {
+    const linked = this.item()?.linkedProjects ?? [];
+    if (linked.length) {
+      return linked.map((item) => ({
+        id: item.id,
+        name: item.title,
+        summary: item.description,
+        coverUrl: item.coverUrl,
+        published: item.visible,
+      }));
+    }
     const byId = new Map(this.projects().map((project) => [project.id, project]));
     return (this.item()?.projectIds ?? []).flatMap((projectId) => {
       const match = byId.get(projectId);
-      return match ? [match] : [];
+      return match
+        ? [
+            {
+              id: match.id,
+              name: match.name,
+              summary: match.summary,
+              coverUrl: readProjectMedia(match.cover, this.lang.language()).imageUrl,
+              published: match.published,
+            },
+          ]
+        : [];
     });
   });
-  protected readonly projectsUnavailable = computed(
-    () =>
+  protected readonly projectsUnavailable = computed(() => {
+    if ((this.item()?.linkedProjects.length ?? 0) > 0) {
+      return false;
+    }
+    return (
       this.projectsStatus() === 'ready' &&
-      this.relatedProjects().length < (this.item()?.projectIds.length ?? 0),
-  );
+      this.relatedProjects().length < (this.item()?.projectIds.length ?? 0)
+    );
+  });
 
   constructor() {
     toObservable(computed(() => ({ id: this.id(), reload: this.reload() })))
@@ -159,15 +194,21 @@ export class ServiceDetailPage {
             return of({ failed: false as const, service: null });
           }
           return this.api.get(id).pipe(
-            map((service) => ({ failed: false as const, service })),
-            catchError(() => of({ failed: true as const, service: null })),
+            map((service) => ({ failed: false as const, service, error: null as unknown })),
+            catchError((error: unknown) => of({ failed: true as const, service: null, error })),
           );
         }),
         takeUntilDestroyed(),
       )
       .subscribe((result) => {
         this.item.set(result.service);
-        this.status.set(result.failed ? 'error' : result.service ? 'ready' : 'missing');
+        this.status.set(
+          result.failed
+            ? loadFailureStatus(result.error, this.network.online())
+            : result.service
+              ? 'ready'
+              : 'missing',
+        );
       });
     this.loadProjects();
 
@@ -200,7 +241,12 @@ export class ServiceDetailPage {
           this.projects.set(projects);
           this.projectsStatus.set('ready');
         },
-        error: () => this.projectsStatus.set('error'),
+        error: (error: unknown) => {
+          if (this.projects().length > 0) {
+            return;
+          }
+          this.projectsStatus.set(loadFailureStatus(error, this.network.online()));
+        },
       });
   }
 
@@ -223,10 +269,43 @@ export class ServiceDetailPage {
   }
 
   protected publishProject(id: string, published: boolean): void {
-    this.projectsApi.setPublished(id, published);
-    this.projects.update((items) =>
-      items.map((item) => (item.id === id ? { ...item, published } : item)),
-    );
+    const service = this.item();
+    if (service?.linkedProjects.length) {
+      this.api
+        .setProjectVisible(service.id, id, published)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: () => {
+            this.item.update((current) =>
+              current
+                ? {
+                    ...current,
+                    linkedProjects: current.linkedProjects.map((item) =>
+                      item.id === id ? { ...item, visible: published } : item,
+                    ),
+                  }
+                : current,
+            );
+          },
+          error: () => {
+            this.messages.add({ severity: 'error', summary: this.lang.t('common.error') });
+          },
+        });
+      return;
+    }
+    this.projectsApi
+      .setPublished(id, published)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (saved) => {
+          this.projects.update((items) =>
+            items.map((item) => (item.id === id ? { ...item, published: saved.published } : item)),
+          );
+        },
+        error: () => {
+          this.messages.add({ severity: 'error', summary: this.lang.t('common.error') });
+        },
+      });
   }
 
   protected async remove(service: Service): Promise<void> {
@@ -255,16 +334,22 @@ export class ServiceDetailPage {
   }
 
   protected iconClass(icon: string): string {
-    return `pi ${ICON_CLASS.test(icon) ? icon : FALLBACK_ICON}`;
+    return serviceIconClass(icon);
   }
 
-  protected visual(image: ServiceImage): ServiceVisual {
-    const url = image.imageUrl;
-    if (url.startsWith('icon:')) {
-      const icon = url.slice('icon:'.length);
-      return { icon: ICON_CLASS.test(icon) ? icon : '', image: '' };
+  protected sectorMedia(sector: ServiceSector): ServiceImage {
+    return readMedia(sector.image, this.lang.language());
+  }
+
+  protected slotMedia(image: LocalizedMedia): ServiceImage {
+    return readMedia(image, this.lang.language());
+  }
+
+  protected visual(image: ServiceImage | LocalizedMedia): ServiceVisual {
+    if ('ar' in image && 'en' in image) {
+      return serviceVisual(this.slotMedia(image));
     }
-    return { icon: '', image: url };
+    return serviceVisual(image);
   }
 
   protected sectorLabel(index: number): string {
@@ -276,12 +361,10 @@ export class ServiceDetailPage {
   }
 
   private points(list: 'solutions' | 'stages' | 'features') {
-    return (this.item()?.[list] ?? []).filter(
-      (entry) => this.filled(entry.title) || this.filled(entry.body) || entry.imageUrl,
-    );
-  }
-
-  private filled(value: LocaleText): boolean {
-    return value.ar.trim().length > 0 || value.en.trim().length > 0;
+    const language = this.lang.language();
+    return (this.item()?.[list] ?? []).filter((entry) => {
+      const media = readMedia(entry.image, language);
+      return filledLocale(entry.title) || filledLocale(entry.body) || !!media.imageUrl;
+    });
   }
 }

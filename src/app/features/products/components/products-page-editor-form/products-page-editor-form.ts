@@ -31,6 +31,11 @@ export class ProductsPageEditorForm {
     return readLocale(value, this.locale());
   }
 
+  /** Field chrome follows the AR/EN tab, not the dashboard UI language. */
+  protected copy(key: string): string {
+    return this.lang.lookup(key, this.locale()) ?? key;
+  }
+
   protected setFeatureText(field: 'title' | 'body', event: Event): void {
     const value = this.read(event);
     if (value === undefined) {
@@ -65,7 +70,19 @@ export class ProductsPageEditorForm {
   }
 
   protected setSectorImage(file: { name: string; url: string }): void {
-    this.sector.update((current) => ({ ...current, imageUrl: file.url }));
+    const language = this.locale();
+    this.sector.update((current) => ({
+      ...current,
+      image: {
+        ...current.image,
+        [language]: {
+          ...current.image[language],
+          imageName: file.name,
+          imageUrl: file.url,
+          imageUuid: null,
+        },
+      },
+    }));
   }
 
   private read(event: Event): string | undefined {

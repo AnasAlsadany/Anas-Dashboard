@@ -4,11 +4,7 @@ import { authGuard, guestGuard, verifyGuard } from './core/guards/auth.guard';
 import { permissionGuard } from './core/guards/permission.guard';
 import type { LegalDocumentKind } from './features/sections/models/legal-document.model';
 
-const placeholder = (
-  path: string,
-  titleKey: string,
-  permission?: string,
-): Routes[number] => ({
+const placeholder = (path: string, titleKey: string, permission?: string): Routes[number] => ({
   path,
   ...(permission ? { canActivate: [permissionGuard()] } : {}),
   loadComponent: () =>
@@ -58,7 +54,6 @@ export const routes: Routes = [
     data: { titleKey: 'auth.verifyTitle' },
   },
   {
-
     path: 'forbidden',
     canActivate: [authGuard],
     loadComponent: () =>
@@ -140,7 +135,11 @@ export const routes: Routes = [
               import('./features/sections/components/inquiries-board/inquiries-board').then(
                 (m) => m.InquiriesBoard,
               ),
-            data: { titleKey: 'nav.inquiries', detailPath: '/contact/inquiries' },
+            data: {
+              titleKey: 'nav.inquiries',
+              detailPath: '/contact/inquiries',
+              inbox: 'inquiries',
+            },
           },
           {
             path: ':id',
@@ -152,6 +151,7 @@ export const routes: Routes = [
               breadcrumb: ':id',
               titleKey: 'nav.inquiries',
               permissionModule: 'inquiries',
+              inbox: 'inquiries',
             },
           },
         ],
@@ -171,6 +171,7 @@ export const routes: Routes = [
               titleKey: 'nav.startProjects',
               pageTitleKey: 'nav.startProjects',
               detailPath: '/contact/start',
+              inbox: 'project_requests',
             },
           },
           {
@@ -183,6 +184,7 @@ export const routes: Routes = [
               breadcrumb: ':id',
               titleKey: 'nav.startProjects',
               permissionModule: 'project_requests',
+              inbox: 'project_requests',
             },
           },
         ],
@@ -212,7 +214,7 @@ export const routes: Routes = [
             canActivate: [permissionGuard()],
             loadComponent: () =>
               import('./features/products/pages/products-list/products-list').then(
-                (m) => m.ProductsPage,
+                (m) => m.ProductsListPage,
               ),
             data: {
               permission: 'products.view',
@@ -285,7 +287,7 @@ export const routes: Routes = [
             canActivate: [permissionGuard()],
             loadComponent: () =>
               import('./features/projects/pages/projects-list/projects-list').then(
-                (m) => m.ProjectsPage,
+                (m) => m.ProjectsList,
               ),
             data: {
               permission: 'projects.view',

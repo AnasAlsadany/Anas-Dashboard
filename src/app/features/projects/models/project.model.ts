@@ -1,4 +1,5 @@
 import type { AppLanguage } from '../../../core/i18n/language';
+import { IDENTITY_IMAGE_SLOTS } from '../constants/project-limits';
 
 export interface LocaleText {
   ar: string;
@@ -13,26 +14,52 @@ export function localeText(ar = '', en = ''): LocaleText {
   return { ar, en };
 }
 
+export interface ProjectImage {
+  imageName: string;
+  imageUrl: string;
+  /** Media coat-check UUID when known from the API or a fresh upload. */
+  imageUuid?: string | null;
+}
+
+/** Per-locale media slots used in the project editor (AR/EN tabs). */
+export type LocalizedMedia = Record<AppLanguage, ProjectImage>;
+
+export function emptyProjectImage(): ProjectImage {
+  return { imageName: '', imageUrl: '', imageUuid: null };
+}
+
+export function emptyLocalizedMedia(): LocalizedMedia {
+  return { ar: emptyProjectImage(), en: emptyProjectImage() };
+}
+
+/**
+ * Active-locale media with Arabic fallback (matches website behavior when EN is empty).
+ */
+export function readMedia(image: LocalizedMedia, language: AppLanguage): ProjectImage {
+  const current = image[language];
+  if (current.imageUrl) {
+    return current;
+  }
+  return image.ar.imageUrl ? image.ar : current;
+}
+
 export interface ProjectPoint {
   id: string;
   title: LocaleText;
   body: LocaleText;
-  imageName: string;
-  imageUrl: string;
+  image: LocalizedMedia;
 }
 
 export interface ProjectMedia {
   id: string;
   title: LocaleText;
   body: LocaleText;
-  imageName: string;
-  imageUrl: string;
+  image: LocalizedMedia;
 }
 
 export interface ProjectGalleryImage {
   id: string;
-  imageName: string;
-  imageUrl: string;
+  image: LocalizedMedia;
 }
 
 export interface ProjectIdentityButton {
@@ -41,8 +68,6 @@ export interface ProjectIdentityButton {
   body: LocaleText;
   images: ProjectGalleryImage[];
 }
-
-export const IDENTITY_IMAGE_SLOTS = 4;
 
 export interface ProjectSeo {
   slug: LocaleText;
@@ -53,15 +78,16 @@ export interface ProjectSeo {
 
 export interface Project {
   id: string;
+  code: string;
   published: boolean;
   name: LocaleText;
   summary: LocaleText;
-  coverName: string;
-  coverUrl: string;
+  /** Cover image per editor locale. API still stores one shared cover file. */
+  cover: LocalizedMedia;
   coverTitle: LocaleText;
   coverAlt: LocaleText;
-  thumbName: string;
-  thumbUrl: string;
+  /** Thumbnail per editor locale. API still stores one shared thumbnail file. */
+  thumb: LocalizedMedia;
   thumbTitle: LocaleText;
   thumbAlt: LocaleText;
 
@@ -88,18 +114,6 @@ export interface Project {
   seo: ProjectSeo;
 }
 
-export const PROJECT_STEPS = [
-  { id: 'about', labelKey: 'project.step.about' },
-  { id: 'challenges', labelKey: 'project.step.challenges' },
-  { id: 'solutions', labelKey: 'project.step.solutions' },
-  { id: 'features', labelKey: 'project.step.features' },
-  { id: 'results', labelKey: 'project.step.results' },
-  { id: 'identity', labelKey: 'project.step.identity' },
-  { id: 'seo', labelKey: 'project.step.seo' },
-] as const;
-
-export type ProjectStepId = (typeof PROJECT_STEPS)[number]['id'];
-
 let sequence = 0;
 
 export function projectId(prefix: string): string {
@@ -108,7 +122,7 @@ export function projectId(prefix: string): string {
 }
 
 export function projectPoint(title = localeText(), body = localeText()): ProjectPoint {
-  return { id: projectId('point'), title, body, imageName: '', imageUrl: '' };
+  return { id: projectId('point'), title, body, image: emptyLocalizedMedia() };
 }
 
 export function projectMedia(): ProjectMedia {
@@ -116,13 +130,12 @@ export function projectMedia(): ProjectMedia {
     id: projectId('media'),
     title: localeText(),
     body: localeText(),
-    imageName: '',
-    imageUrl: '',
+    image: emptyLocalizedMedia(),
   };
 }
 
 export function projectGalleryImage(): ProjectGalleryImage {
-  return { id: projectId('gallery'), imageName: '', imageUrl: '' };
+  return { id: projectId('gallery'), image: emptyLocalizedMedia() };
 }
 
 export function projectIdentityButton(
@@ -140,15 +153,14 @@ export function projectIdentityButton(
 export function blankProject(): Project {
   return {
     id: '',
+    code: '',
     published: true,
     name: localeText(),
     summary: localeText(),
-    coverName: '',
-    coverUrl: '',
+    cover: emptyLocalizedMedia(),
     coverTitle: localeText(),
     coverAlt: localeText(),
-    thumbName: '',
-    thumbUrl: '',
+    thumb: emptyLocalizedMedia(),
     thumbTitle: localeText(),
     thumbAlt: localeText(),
     categories: [projectPoint()],

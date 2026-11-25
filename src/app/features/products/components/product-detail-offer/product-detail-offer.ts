@@ -1,18 +1,18 @@
-import {
-  ChangeDetectionStrategy,
-  Component,
-  computed,
-  inject,
-  input,
-  output,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output } from '@angular/core';
 import { RouterLink } from '@angular/router';
 
 import { AuthService } from '../../../../core/auth/auth.service';
 import type { AppLanguage } from '../../../../core/i18n/language';
 import { LanguageService } from '../../../../core/services/language.service';
 import { DetailPoints } from '../detail-points/detail-points';
-import { readLocale, type LocaleText, type Product } from '../../models/product.model';
+import {
+  readLocale,
+  readMedia,
+  type LocaleText,
+  type LocalizedMedia,
+  type Product,
+  type ProductImage,
+} from '../../models/product.model';
 import type { ProductDetailRemoveEvent } from '../../pages/product-detail/product-detail.types';
 
 @Component({
@@ -36,6 +36,10 @@ export class ProductDetailOffer {
 
   protected text(value: LocaleText): string {
     return readLocale(value, this.locale());
+  }
+
+  protected media(image: LocalizedMedia): ProductImage {
+    return readMedia(image, this.locale());
   }
 
   protected iconClass(url: string): string {

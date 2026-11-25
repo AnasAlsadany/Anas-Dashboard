@@ -124,14 +124,23 @@ describe('ProductUpload', () => {
       '.uploader__mark--icon img.icon-library__img--preview',
     ) as HTMLImageElement | null;
     expect(previewImg).not.toBeNull();
-    expect(previewImg?.getAttribute('src')).toBe('iconLibrary/fi-br-globe.svg');
+    expect(previewImg?.getAttribute('src')).toBe('/iconLibrary/fi-br-globe.svg');
   });
   function fileInput(fixture: ReturnType<typeof create>): HTMLInputElement {
     return fixture.nativeElement.querySelector('input[type="file"]') as HTMLInputElement;
   }
 
   function pick(fixture: ReturnType<typeof create>, name = 'a.png', type = 'image/png'): void {
+    // Library mode hides the file input; switch back to upload when actions are on.
+    const uploadTab = [
+      ...fixture.nativeElement.querySelectorAll('.uploader__action'),
+    ] as HTMLButtonElement[];
+    if (uploadTab[0] && fixture.nativeElement.querySelector('input[type="file"]') === null) {
+      uploadTab[0].click();
+      fixture.detectChanges();
+    }
     const input = fileInput(fixture);
+    expect(input).toBeTruthy();
     Object.defineProperty(input, 'files', {
       value: [new File([new Uint8Array([1])], name, { type })],
       configurable: true,
@@ -183,6 +192,24 @@ describe('ProductUpload', () => {
 
       expect(revoke).toHaveBeenCalledTimes(1);
       expect(revoke).toHaveBeenCalledWith('blob:test/1');
+      expect(preview(fixture)).toBe('blob:test/2');
+    });
+
+    it('does not revoke a previous slot blob when the bound url rebinds before a new pick', () => {
+      const fixture = create((host) => (host.follow = true));
+      pick(fixture, 'ar.png');
+      expect(fixture.componentInstance.url).toBe('blob:test/1');
+
+      // Simulate locale / list reuse: same control instance, different media slot.
+      fixture.componentInstance.url = '';
+      fixture.componentInstance.name = '';
+      refresh(fixture);
+      expect(revoke).not.toHaveBeenCalled();
+
+      pick(fixture, 'en.png');
+
+      expect(revoke).not.toHaveBeenCalled();
+      expect(fixture.componentInstance.url).toBe('blob:test/2');
       expect(preview(fixture)).toBe('blob:test/2');
     });
 

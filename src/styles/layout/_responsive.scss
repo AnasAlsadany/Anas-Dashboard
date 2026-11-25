@@ -66,11 +66,19 @@
   .auth-brand {
     height: auto;
     min-height: calc(100vh - 24px);
-    padding: 24px 16px;
+  }
+
+  .auth-panel {
+    align-items: center;
+    // Keep equal insets on all sides (scaled down from the desktop 52px).
+    padding: 24px;
+    view-transition-name: none;
   }
 
   .auth-brand {
     display: none;
+    padding: 24px 16px;
+    view-transition-name: none;
   }
 }
 

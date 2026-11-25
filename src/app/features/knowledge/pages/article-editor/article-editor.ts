@@ -23,9 +23,13 @@ import { InputText } from 'primeng/inputtext';
 import { Select } from 'primeng/select';
 import { Textarea } from 'primeng/textarea';
 import type { EditorInitEvent } from 'primeng/types/editor';
+import { firstValueFrom } from 'rxjs';
 
 import type { AppLanguage } from '../../../../core/i18n/language';
+import { MediaService } from '../../../../core/media/media.service';
+import { loadFailureStatus } from '../../../../core/http/api-error';
 import { LanguageService } from '../../../../core/services/language.service';
+import { NetworkStatusService } from '../../../../core/services/network-status.service';
 import { AppButton } from '../../../../shared/components/app-button/app-button';
 import { ConfirmDialog } from '../../../../shared/components/confirm-dialog/confirm-dialog';
 import { FieldError } from '../../../../shared/components/field-error/field-error';
@@ -33,9 +37,6 @@ import { LocaleSwitch } from '../../../../shared/components/locale-switch/locale
 import { PageHeader } from '../../../../shared/components/page-header/page-header';
 import { StateView } from '../../../../shared/components/state-view/state-view';
 import { HasPermissionDirective } from '../../../../shared/directives/has-permission.directive';
-import { formatIsoDate } from '../../../../shared/utils/date';
-import { formatFileSize } from '../../../../shared/utils/file-size';
-import { IMAGE_UPLOAD_ACCEPT, parseUploadedImage } from '../../../../shared/utils/image-upload';
 import {
   QUILL_FONT_REGISTRAR,
   applyQuillDirection,
@@ -43,8 +44,10 @@ import {
   wireQuillToolbarHandlers,
   type AppQuill,
 } from '../../../../shared/editor/quill';
+import { formatIsoDate } from '../../../../shared/utils/date';
+import { formatFileSize } from '../../../../shared/utils/file-size';
+import { IMAGE_UPLOAD_ACCEPT, parseUploadedImage } from '../../../../shared/utils/image-upload';
 import {
-  blankArticle,
   type Article,
   type ArticleCategory,
   type ArticleDraft,
@@ -52,30 +55,32 @@ import {
 } from '../../models/knowledge.model';
 import { KnowledgeActions } from '../../services/knowledge-actions.service';
 import { KnowledgeService } from '../../services/knowledge.service';
-import { categoryName, joinKeywords, nowStamp, splitKeywords } from '../../utils/knowledge-format';
+import {
+  EMPTY_ARTICLE_IMAGES,
+  articleImagesFromArticle,
+  existingArticleImageUrl,
+  mediaDraftFromImages,
+  type ArticleImageSlot,
+  type ArticleSlotImage,
+} from '../../utils/article-editor-images';
+import {
+  collectArticleValidationIssues,
+  type ArticleValidationStrictness,
+} from '../../utils/article-editor-validation';
+import { articleFormValueFromArticle, fieldsFromArticleForm } from '../../utils/article-form-map';
+import { categoryName, joinKeywords, splitKeywords } from '../../utils/knowledge-format';
 
-type LoadStatus = 'loading' | 'ready' | 'missing' | 'error';
-type ImageSlot = 'avatar' | 'thumbnail' | 'cover';
-type Strictness = 'strict' | 'lenient';
-
-interface SlotImage {
-  url: string;
-  name: string;
-  size: number;
-
-  date: string;
-}
+type LoadStatus = 'loading' | 'ready' | 'missing' | 'error' | 'offline';
+type ImageSlot = ArticleImageSlot;
+type Strictness = ArticleValidationStrictness;
+type SlotImage = ArticleSlotImage;
 
 type FormKey = Exclude<
   keyof ArticleDraft,
   'status' | 'featured' | 'publishedAt' | 'authorAvatarUrl' | 'thumbnailUrl' | 'coverUrl'
 >;
 
-const EMPTY_IMAGES: Record<ImageSlot, SlotImage | null> = {
-  avatar: null,
-  thumbnail: null,
-  cover: null,
-};
+const EMPTY_IMAGES = EMPTY_ARTICLE_IMAGES;
 
 @Component({
   selector: 'app-article-editor',
@@ -103,11 +108,13 @@ const EMPTY_IMAGES: Record<ImageSlot, SlotImage | null> = {
 })
 export class ArticleEditor {
   private readonly api = inject(KnowledgeService);
+  private readonly media = inject(MediaService);
   private readonly actions = inject(KnowledgeActions);
   private readonly messages = inject(MessageService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly network = inject(NetworkStatusService);
   private readonly fb = inject(FormBuilder);
   private readonly registerQuillFont = inject(QUILL_FONT_REGISTRAR);
   private readonly confirm = viewChild.required(ConfirmDialog);
@@ -283,7 +290,16 @@ export class ArticleEditor {
 
   protected onEditorInit(event: EditorInitEvent): void {
     const quill = event.editor as AppQuill;
-    wireQuillToolbarHandlers(quill);
+    wireQuillToolbarHandlers(quill, {
+      uploadImage: (file) =>
+        firstValueFrom(this.media.uploadEditorImage(file)).then((uploaded) => uploaded.url),
+      onImageUploadError: () => {
+        this.messages.add({
+          severity: 'error',
+          summary: this.lang.t('common.error'),
+        });
+      },
+    });
     applyQuillDirection(quill, this.locale());
   }
 
@@ -357,12 +373,17 @@ export class ArticleEditor {
   }
 
   protected removeImage(slot: ImageSlot): void {
-    this.setImage(slot, null);
+    const hadExisting = !!this.existingUrl(slot);
+    this.setImage(
+      slot,
+      hadExisting ? { url: '', name: '', size: 0, date: '', cleared: true } : null,
+    );
     this.imageErrors.update((errors) => ({ ...errors, [slot]: '' }));
   }
 
   protected imageOf(slot: ImageSlot): SlotImage | null {
-    return this.images()[slot];
+    const image = this.images()[slot];
+    return image && !image.cleared && image.url ? image : null;
   }
 
   protected errorOf(slot: ImageSlot): string {
@@ -392,6 +413,7 @@ export class ArticleEditor {
       name: parsed.image.name,
       size: parsed.image.size,
       date: parsed.image.uploadedAt,
+      file,
     });
   }
 
@@ -413,7 +435,7 @@ export class ArticleEditor {
           this.apply(article);
           this.status.set('ready');
         },
-        error: () => this.status.set('error'),
+        error: (error: unknown) => this.status.set(loadFailureStatus(error, this.network.online())),
       });
   }
 
@@ -421,75 +443,36 @@ export class ArticleEditor {
     this.article.set(article);
     this.flagged.set(new Set());
     this.imageErrors.set({});
-    this.form.reset({
-      titleAr: article.titleAr,
-      titleEn: article.titleEn,
-      excerptAr: article.excerptAr,
-      excerptEn: article.excerptEn,
-      categoryId: article.categoryId,
-      readingMinutes: article.readingMinutes,
-      publishedDate: article.publishedAt.slice(0, 10),
-      authorNameAr: article.authorNameAr,
-      authorNameEn: article.authorNameEn,
-      slug: article.slug,
-      seoTitleAr: article.seoTitleAr,
-      seoTitleEn: article.seoTitleEn,
-      seoDescriptionAr: article.seoDescriptionAr,
-      seoDescriptionEn: article.seoDescriptionEn,
-      seoKeywordsAr: article.seoKeywordsAr,
-      seoKeywordsEn: article.seoKeywordsEn,
-      thumbnailTitleAr: article.thumbnailTitleAr,
-      thumbnailTitleEn: article.thumbnailTitleEn,
-      thumbnailAltAr: article.thumbnailAltAr,
-      thumbnailAltEn: article.thumbnailAltEn,
-      coverTitleAr: article.coverTitleAr,
-      coverTitleEn: article.coverTitleEn,
-      coverAltAr: article.coverAltAr,
-      coverAltEn: article.coverAltEn,
-      contentAr: article.contentAr,
-      contentEn: article.contentEn,
-    });
-    this.images.set({
-      avatar: this.slotFrom(article.authorAvatarUrl, article.createdAt),
-      thumbnail: this.slotFrom(article.thumbnailUrl, article.createdAt),
-      cover: this.slotFrom(article.coverUrl, article.createdAt),
-    });
+    this.form.reset(articleFormValueFromArticle(article));
+    this.images.set(articleImagesFromArticle(article));
     this.keywordDraft.set('');
     this.keywordRevision.update((n) => n + 1);
   }
 
-  private slotFrom(url: string, date: string): SlotImage | null {
-    return url ? { url, name: url.split('/').pop() ?? url, size: 0, date } : null;
+  private existingUrl(slot: ImageSlot): string {
+    return existingArticleImageUrl(this.article(), slot);
   }
 
   private validate(strictness: Strictness): boolean {
-    const missing = new Set<string>();
     const value = this.form.getRawValue();
-
-    if (strictness === 'strict') {
-      for (const suffix of ['Ar', 'En'] as const) {
-        if (!value[`title${suffix}`].trim()) {
-          missing.add(`title${suffix}`);
-        }
-        if (!hasVisibleHtml(value[`content${suffix}`])) {
-          missing.add(`content${suffix}`);
-        }
-      }
-      if (!value.categoryId) {
-        missing.add('categoryId');
-      }
-    } else if (!value.titleAr.trim() && !value.titleEn.trim()) {
-      missing.add(this.key('title'));
-    }
-
-    this.flagged.set(missing);
-    if (missing.size === 0) {
+    const result = collectArticleValidationIssues(
+      {
+        titleAr: value.titleAr,
+        titleEn: value.titleEn,
+        contentAr: value.contentAr,
+        contentEn: value.contentEn,
+        categoryId: value.categoryId,
+      },
+      strictness,
+      this.suffix(),
+      hasVisibleHtml,
+    );
+    this.flagged.set(result.missing);
+    if (result.missing.size === 0) {
       return true;
     }
-    const here = this.suffix();
-    const hereHasIssue = [...missing].some((name) => name.endsWith(here) || name === 'categoryId');
-    if (!hereHasIssue) {
-      this.locale.set(here === 'Ar' ? 'en' : 'ar');
+    if (result.switchTo) {
+      this.locale.set(result.switchTo);
     }
     this.messages.add({ severity: 'warn', summary: this.lang.t('knowledge.required') });
     return false;
@@ -500,12 +483,13 @@ export class ArticleEditor {
       return;
     }
     const fields = this.fieldsFromForm(status);
+    const media = mediaDraftFromImages(this.images());
     const current = this.article();
     this.saving.set(true);
     const request =
       this.mode === 'edit' && current
-        ? this.api.update({ ...current, ...fields })
-        : this.api.create({ ...blankArticle(), ...fields });
+        ? this.api.update(current.id, fields, media)
+        : this.api.create(fields, media);
     request.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (saved) => {
         this.saving.set(false);
@@ -530,24 +514,10 @@ export class ArticleEditor {
   }
 
   private fieldsFromForm(status: ArticleStatus): ArticleDraft {
-    const raw = this.form.getRawValue();
-    const images = this.images();
-    const now = nowStamp();
-    const time = this.article()?.publishedAt.slice(11, 16) || now.slice(11, 16);
-    const { publishedDate, ...text } = raw;
-    return {
-      ...blankArticle(),
-      ...this.article(),
-      ...text,
-      titleAr: text.titleAr.trim(),
-      titleEn: text.titleEn.trim(),
-      readingMinutes: Math.max(1, Math.round(Number(text.readingMinutes) || 1)),
-      status,
-      publishedAt: `${publishedDate || now.slice(0, 10)}T${time}`,
-      authorAvatarUrl: images.avatar?.url ?? '',
-      thumbnailUrl: images.thumbnail?.url ?? '',
-      coverUrl: images.cover?.url ?? '',
-    };
+    return fieldsFromArticleForm(this.form.getRawValue(), status, {
+      previousPublishedAt: this.article()?.publishedAt ?? '',
+      featured: this.article()?.featured ?? false,
+    });
   }
 
   private blank(name: FormKey): boolean {

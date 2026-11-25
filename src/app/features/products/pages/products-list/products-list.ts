@@ -8,6 +8,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { forkJoin } from 'rxjs';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { MessageService } from 'primeng/api';
@@ -16,7 +17,9 @@ import { Popover } from 'primeng/popover';
 import { ToggleSwitch } from 'primeng/toggleswitch';
 
 import { AuthService } from '../../../../core/auth/auth.service';
+import { loadFailureStatus } from '../../../../core/http/api-error';
 import { LanguageService } from '../../../../core/services/language.service';
+import { NetworkStatusService } from '../../../../core/services/network-status.service';
 import { AppPaginator } from '../../../../shared/components/app-paginator/app-paginator';
 import { ConfirmDialog } from '../../../../shared/components/confirm-dialog/confirm-dialog';
 import { PageHeader } from '../../../../shared/components/page-header/page-header';
@@ -26,13 +29,16 @@ import {
 } from '../../../../shared/components/product-card/product-card';
 import { StateView } from '../../../../shared/components/state-view/state-view';
 import { HasPermissionDirective } from '../../../../shared/directives/has-permission.directive';
-import { readLocale, type Product, type ProductPoint } from '../../models/product.model';
+import { readLocale, readMedia, type Product, type ProductPoint } from '../../models/product.model';
 import { ProductsService } from '../../services/products.service';
 
-type LoadState = 'loading' | 'ready' | 'error';
+type LoadState = 'loading' | 'ready' | 'error' | 'offline';
+
+/** Cards per page; the paginator stays hidden until the list exceeds this. */
+export const PRODUCT_LIST_PAGE_SIZE = 6;
 
 @Component({
-  selector: 'app-products-page',
+  selector: 'app-products-list',
   imports: [
     FormsModule,
     PageHeader,
@@ -48,11 +54,12 @@ type LoadState = 'loading' | 'ready' | 'error';
   templateUrl: './products-list.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class ProductsPage {
+export class ProductsListPage {
   private readonly messages = inject(MessageService);
   private readonly router = inject(Router);
   private readonly auth = inject(AuthService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly network = inject(NetworkStatusService);
   private readonly confirm = viewChild.required(ConfirmDialog);
   private readonly menu = viewChild.required(Popover);
   readonly lang = inject(LanguageService);
@@ -61,7 +68,7 @@ export class ProductsPage {
   readonly status = signal<LoadState>('loading');
   readonly menuProduct = signal<Product | null>(null);
   readonly first = signal(0);
-  readonly rows = signal(10);
+  readonly rows = signal(PRODUCT_LIST_PAGE_SIZE);
   /** Bumps on every load so a slower, older response cannot overwrite a newer one. */
   private loadSeq = 0;
 
@@ -99,6 +106,10 @@ export class ProductsPage {
 
   private display(value: ProductPoint['title']): string {
     return readLocale(value, this.lang.language()) || value.ar;
+  }
+
+  protected coverImage(product: Product): string {
+    return readMedia(product.cover, this.lang.language()).imageUrl;
   }
 
   protected cardFeatures(product: Product): ProductCardFeature[] {
@@ -165,22 +176,27 @@ export class ProductsPage {
   private load(): void {
     const seq = ++this.loadSeq;
     this.status.set('loading');
-    this.api
-      .list()
+    forkJoin({
+      items: this.api.listAll(),
+      visible: this.api.loadCatalogVisibility(),
+    })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: (items) => {
+        next: ({ items }) => {
           if (seq !== this.loadSeq) {
             return;
           }
           this.source.set(items);
           this.status.set('ready');
         },
-        error: () => {
+        error: (error: unknown) => {
           if (seq !== this.loadSeq) {
             return;
           }
-          this.status.set('error');
+          if (this.source().length > 0) {
+            return;
+          }
+          this.status.set(loadFailureStatus(error, this.network.online()));
         },
       });
   }

@@ -1,4 +1,12 @@
-import { ChangeDetectionStrategy, Component, inject, input, output, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  effect,
+  inject,
+  input,
+  output,
+  signal,
+} from '@angular/core';
 
 import type { AppLanguage } from '../../../core/i18n/language';
 import { LanguageService } from '../../../core/services/language.service';
@@ -17,7 +25,7 @@ export class ProductUpload {
   private readonly objectUrls = inject(ObjectUrls);
   readonly name = input('');
   readonly url = input('');
-  readonly actions = input(false);
+  readonly actions = input(true);
   readonly locale = input<AppLanguage | null>(null);
 
   readonly keyPrefix = input('product');
@@ -31,7 +39,23 @@ export class ProductUpload {
 
   protected readonly icons = ICON_LIBRARY_IDS;
 
-  private lastPicked = '';
+  /** Blob URL this control currently owns for the bound media slot. */
+  private ownedByControl = '';
+
+  constructor() {
+    effect(() => {
+      const bound = this.url();
+      // Parent rebound this control (locale switch / list reuse). Retarget
+      // ownership without releasing — the draft still holds those blobs.
+      if (bound !== this.ownedByControl) {
+        this.ownedByControl = bound.startsWith('blob:') ? bound : '';
+        // Show library tab as primary when rebound media is a library icon.
+        if (bound.startsWith('icon:')) {
+          this.source.set('library');
+        }
+      }
+    });
+  }
 
   protected copy(suffix: string): string {
     const key = `${this.keyPrefix()}.${suffix}`;
@@ -80,7 +104,8 @@ export class ProductUpload {
     event.preventDefault();
     event.stopPropagation();
     this.sizeError.set(false);
-    this.release();
+    this.replaceOwned('');
+    this.source.set('upload');
     this.cleared.emit();
   }
 
@@ -94,17 +119,25 @@ export class ProductUpload {
     }
     this.sizeError.set(false);
     const url = this.objectUrls.create(file);
-    this.release(url);
+    this.replaceOwned(url);
     this.picked.emit({ name: file.name, url });
   }
 
-  private release(keep = ''): void {
-    for (const url of new Set([this.url(), this.lastPicked])) {
-      if (url !== keep) {
+  private replaceOwned(next: string): void {
+    const previous = new Set<string>();
+    if (this.ownedByControl) {
+      previous.add(this.ownedByControl);
+    }
+    const current = this.url();
+    if (current.startsWith('blob:')) {
+      previous.add(current);
+    }
+    for (const url of previous) {
+      if (url !== next) {
         this.objectUrls.release(url);
       }
     }
-    this.lastPicked = keep;
+    this.ownedByControl = next;
   }
 
   protected open(input: HTMLInputElement): void {
@@ -113,7 +146,7 @@ export class ProductUpload {
 
   protected pickIcon(icon: string): void {
     this.sizeError.set(false);
-    this.release();
+    this.replaceOwned('');
     this.source.set('library');
     this.picked.emit({ name: icon, url: `icon:${icon}` });
   }

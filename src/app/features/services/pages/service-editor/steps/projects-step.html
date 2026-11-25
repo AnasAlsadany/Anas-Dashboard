@@ -16,6 +16,9 @@
           (retry)="editor.loadProjects()"
         />
       }
+      @case ('offline') {
+        <app-state-view mode="offline" (retry)="editor.loadProjects()" />
+      }
       @default {
         @if (editor.projects().length === 0) {
           <app-state-view mode="empty" [message]="editor.copy('service.projectsEmpty')" />
@@ -25,7 +28,7 @@
               <app-service-project-card
                 [title]="editor.text(project.name) || project.name.ar"
                 [summary]="editor.text(project.summary) || project.summary.ar"
-                [coverUrl]="project.coverUrl"
+                [coverUrl]="editor.projectCoverUrl(project)"
                 [selected]="editor.projectSelected(project.id)"
                 [toggleLabel]="editor.copy('service.projectToggle')"
                 (selectedChange)="editor.setProject(project.id, $event)"

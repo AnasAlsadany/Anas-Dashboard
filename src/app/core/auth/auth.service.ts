@@ -1,8 +1,17 @@
 import { HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 import { Injectable, computed, inject, signal } from '@angular/core';
-import { type Observable, catchError, finalize, map, of, shareReplay, tap, throwError } from 'rxjs';
+import {
+  type Observable,
+  catchError,
+  finalize,
+  map,
+  of,
+  shareReplay,
+  switchMap,
+  tap,
+  throwError,
+} from 'rxjs';
 
-import { TEMPORARY_DEMO_OTP } from '../../../environments/environment.model';
 import { API_BASE_URL, apiUrl } from '../config/api';
 import { isApiError, toApiError } from '../http/api-error';
 import type { ApiEnvelope, FileObject } from '../http/api.model';
@@ -10,17 +19,14 @@ import { AuthError } from './auth.error';
 import type {
   AuthSession,
   ForgotPasswordRequest,
-  ForgotPasswordResponse,
   LoginPayload,
   LoginRequest,
   PendingAuth,
   PermissionName,
   ProfileUserDto,
   ResetPasswordRequest,
-  ResetPasswordResponse,
   StoredAuthSession,
-  VerifyResetCodePayload,
-  VerifyResetCodeRequest,
+  VerifyCodeRequest,
 } from './auth.model';
 
 const SESSION_KEY = 'codetech.session';
@@ -29,7 +35,7 @@ const PENDING_KEY = 'codetech.pending';
 const LOGIN_PATH = 'admin/auth/login';
 const LOGOUT_PATH = 'admin/auth/logout';
 const FORGOT_PASSWORD_PATH = 'admin/auth/forgot-password';
-const VERIFY_RESET_CODE_PATH = 'admin/auth/verify-code';
+const VERIFY_CODE_PATH = 'admin/auth/verify-code';
 const RESET_PASSWORD_PATH = 'admin/auth/reset-password';
 const PROFILE_PATH = 'admin/profile';
 
@@ -71,8 +77,6 @@ export class AuthService {
     const body: LoginRequest = { email: email.trim(), password, remember };
     return this.http.post<ApiEnvelope<LoginPayload>>(apiUrl(this.base, LOGIN_PATH), body).pipe(
       map((envelope) => this.requireLogin(envelope)),
-      tap((payload) => this.storePending(this.toPending(payload, remember))),
-      map(() => undefined),
       catchError((error: unknown) => {
         this.clearPending();
         const normalized = this.normalize(error);
@@ -81,6 +85,15 @@ export class AuthService {
         }
         return throwError(() => normalized);
       }),
+      tap((payload) => this.storePending(this.toPending(payload, remember))),
+      switchMap((payload) =>
+        this.requestPasswordReset(payload.user.email).pipe(
+          catchError((error: unknown) => {
+            this.clearPending();
+            return throwError(() => error);
+          }),
+        ),
+      ),
     );
   }
 
@@ -89,74 +102,62 @@ export class AuthService {
     if (!pending) {
       return throwError(() => new AuthError('missing-pending'));
     }
-    if (code !== TEMPORARY_DEMO_OTP) {
-      return throwError(() => new AuthError('invalid-otp'));
-    }
-    return this.loadProfile(pending.token).pipe(
-      tap((profile) => {
-        this.activate(this.sessionFromProfile(pending.token, pending.remember, profile));
-        this.clearPending();
-      }),
+    return this.postVerifyCode(pending.email, code).pipe(
+      switchMap(() =>
+        this.loadProfile(pending.token).pipe(
+          tap((profile) => {
+            this.activate(this.sessionFromProfile(pending.token, pending.remember, profile));
+            this.clearPending();
+          }),
+          catchError((error: unknown) => {
+            this.clearSession();
+            this.clearPending();
+            return throwError(() => this.normalize(error));
+          }),
+        ),
+      ),
       map(() => undefined),
-      catchError((error: unknown) => {
-
-        this.clearSession();
-        this.clearPending();
-        return throwError(() => this.normalize(error));
-      }),
     );
   }
 
   resend(): Observable<void> {
-    return of(undefined);
+    const pending = this.readPending();
+    if (!pending) {
+      return throwError(() => new AuthError('missing-pending'));
+    }
+    return this.requestPasswordReset(pending.email);
   }
 
-  /**
-   * Sends a 4-digit reset code. Response is identical for registered and unknown
-   * emails. Wait `resend_after` seconds before calling again (429 otherwise).
-   */
-  requestPasswordReset(email: string): Observable<ForgotPasswordResponse> {
+  requestPasswordReset(email: string): Observable<void> {
     const body: ForgotPasswordRequest = { email: email.trim() };
-    return this.http
-      .post<ForgotPasswordResponse>(apiUrl(this.base, FORGOT_PASSWORD_PATH), body)
-      .pipe(
-        map((response) => this.requireForgotPassword(response)),
-        catchError((error: unknown) => throwError(() => this.normalize(error))),
-      );
+    return this.http.post(apiUrl(this.base, FORGOT_PASSWORD_PATH), body).pipe(
+      map(() => undefined),
+      catchError((error: unknown) => throwError(() => this.normalize(error))),
+    );
   }
 
-  verifyResetCode(email: string, code: string): Observable<VerifyResetCodePayload> {
-    const body: VerifyResetCodeRequest = { email: email.trim(), code: code.trim() };
-    return this.http
-      .post<ApiEnvelope<VerifyResetCodePayload>>(apiUrl(this.base, VERIFY_RESET_CODE_PATH), body)
-      .pipe(
-        map((envelope) => this.requireVerifyResetCode(envelope)),
-        catchError((error: unknown) => {
-          const normalized = this.normalize(error);
-          if (isApiError(normalized) && normalized.status === 422) {
-            return throwError(() => new AuthError('invalid-otp'));
-          }
-          return throwError(() => normalized);
-        }),
-      );
+  verifyResetCode(email: string, code: string): Observable<string> {
+    return this.postVerifyCode(email, code).pipe(
+      map((response) => this.requireResetToken(response)),
+    );
   }
 
   resetPassword(
     email: string,
     resetToken: string,
     password: string,
-  ): Observable<ResetPasswordResponse> {
+    passwordConfirmation: string,
+  ): Observable<void> {
     const body: ResetPasswordRequest = {
       email: email.trim(),
       reset_token: resetToken,
       password,
+      password_confirmation: passwordConfirmation,
     };
-    return this.http
-      .post<ResetPasswordResponse>(apiUrl(this.base, RESET_PASSWORD_PATH), body)
-      .pipe(
-        map((response) => this.requireResetPassword(response)),
-        catchError((error: unknown) => throwError(() => this.normalize(error))),
-      );
+    return this.http.post(apiUrl(this.base, RESET_PASSWORD_PATH), body).pipe(
+      map(() => undefined),
+      catchError((error: unknown) => throwError(() => this.normalize(error))),
+    );
   }
 
   logout(): void {
@@ -166,10 +167,14 @@ export class AuthService {
       return;
     }
     this.http
-      .post(apiUrl(this.base, LOGOUT_PATH), {}, {
-        headers: new HttpHeaders({ Authorization: `Bearer ${token}` }),
-        responseType: 'text',
-      })
+      .post(
+        apiUrl(this.base, LOGOUT_PATH),
+        {},
+        {
+          headers: new HttpHeaders({ Authorization: `Bearer ${token}` }),
+          responseType: 'text',
+        },
+      )
       .subscribe({ error: () => undefined });
   }
 
@@ -185,6 +190,20 @@ export class AuthService {
 
   cancelPending(): void {
     this.clearPending();
+  }
+
+  /**
+   * Refresh the hydrated session from a full profile payload without changing the token.
+   * Lean storage stays limited to token/email/name/roleKey/remember.
+   */
+  syncFromProfileEnvelope(envelope: ApiEnvelope<ProfileUserDto>): void {
+    const session = this.session();
+    if (!session) {
+      throw new AuthError('unavailable');
+    }
+    this.activate(
+      this.sessionFromProfile(session.token, session.remember, this.requireProfile(envelope)),
+    );
   }
 
   ensureSession(): Observable<boolean> {
@@ -211,7 +230,6 @@ export class AuthService {
       }),
       map(() => true),
       catchError(() => {
-
         this.clearSession();
         return of(false);
       }),
@@ -293,43 +311,53 @@ export class AuthService {
     this.clearPending();
   }
 
+  private postVerifyCode(email: string, code: string): Observable<unknown> {
+    const body: VerifyCodeRequest = { email: email.trim(), code: code.trim() };
+    return this.http.post<unknown>(apiUrl(this.base, VERIFY_CODE_PATH), body).pipe(
+      catchError((error: unknown) => {
+        const normalized = this.normalize(error);
+        if (isApiError(normalized) && normalized.status === 422) {
+          return throwError(() => new AuthError('invalid-otp'));
+        }
+        return throwError(() => normalized);
+      }),
+    );
+  }
+
+  private requireResetToken(response: unknown): string {
+    const token = this.readResetToken(response);
+    if (!token) {
+      throw new AuthError('unavailable');
+    }
+    return token;
+  }
+
+  private readResetToken(response: unknown): string | null {
+    if (typeof response !== 'object' || response === null) {
+      return null;
+    }
+    const record = response as Record<string, unknown>;
+    const direct = this.tokenString(record['reset_token']);
+    if (direct) {
+      return direct;
+    }
+    const data = record['data'];
+    if (typeof data !== 'object' || data === null) {
+      return null;
+    }
+    return this.tokenString((data as Record<string, unknown>)['reset_token']);
+  }
+
+  private tokenString(value: unknown): string | null {
+    return typeof value === 'string' && value.trim() ? value.trim() : null;
+  }
+
   private requireLogin(envelope: ApiEnvelope<LoginPayload>): LoginPayload {
     const data = envelope?.data;
     if (!data || typeof data.token !== 'string' || typeof data.user?.email !== 'string') {
       throw new AuthError('unavailable');
     }
     return data;
-  }
-
-  private requireForgotPassword(response: ForgotPasswordResponse): ForgotPasswordResponse {
-    if (!response || typeof response.message !== 'string') {
-      throw new AuthError('unavailable');
-    }
-    const resendAfter =
-      typeof response.resend_after === 'number' && response.resend_after > 0
-        ? response.resend_after
-        : 50;
-    return { message: response.message, resend_after: resendAfter };
-  }
-
-  private requireVerifyResetCode(
-    envelope: ApiEnvelope<VerifyResetCodePayload>,
-  ): VerifyResetCodePayload {
-    const data = envelope?.data;
-    if (!data || typeof data.reset_token !== 'string' || !data.reset_token) {
-      throw new AuthError('unavailable');
-    }
-    return {
-      reset_token: data.reset_token,
-      expires_at: typeof data.expires_at === 'string' ? data.expires_at : '',
-    };
-  }
-
-  private requireResetPassword(response: ResetPasswordResponse): ResetPasswordResponse {
-    if (!response || typeof response.message !== 'string') {
-      throw new AuthError('unavailable');
-    }
-    return { message: response.message };
   }
 
   private requireProfile(envelope: ApiEnvelope<ProfileUserDto>): ProfileUserDto {

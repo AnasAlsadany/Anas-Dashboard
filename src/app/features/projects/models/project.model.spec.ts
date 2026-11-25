@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
+import { IDENTITY_IMAGE_SLOTS } from '../constants/project-limits';
+import { PROJECT_STEPS } from '../constants/project-steps';
 import {
-  IDENTITY_IMAGE_SLOTS,
-  PROJECT_STEPS,
   blankProject,
   localeText,
   projectGalleryImage,
@@ -28,19 +28,29 @@ describe('project.model', () => {
   it('builds a blank project with one identity button and four empty image slots', () => {
     const project = blankProject();
     expect(project.id).toBe('');
+    expect(project.code).toBe('');
     expect(project.published).toBe(true);
     expect(project.name).toEqual(localeText());
+    expect(project.cover.ar.imageUuid).toBeNull();
+    expect(project.thumb.ar.imageUuid).toBeNull();
     expect(project.categories).toHaveLength(1);
+    expect(project.categories[0]?.image.ar.imageUuid).toBeNull();
     expect(project.aboutCards).toHaveLength(1);
     expect(project.challenges).toHaveLength(1);
     expect(project.tools).toHaveLength(1);
+    expect(project.tools[0]?.image.ar.imageUuid).toBeNull();
     expect(project.solutions).toHaveLength(1);
     expect(project.gallery).toHaveLength(1);
+    expect(project.gallery[0]?.image.ar.imageUuid).toBeNull();
     expect(project.features).toHaveLength(1);
     expect(project.results).toHaveLength(1);
     expect(project.identityButtons).toHaveLength(1);
     expect(project.identityButtons[0]?.images).toHaveLength(IDENTITY_IMAGE_SLOTS);
-    expect(project.identityButtons[0]?.images.every((image) => image.imageUrl === '')).toBe(true);
+    expect(
+      project.identityButtons[0]?.images.every(
+        (image) => image.image.ar.imageUrl === '' && image.image.en.imageUrl === '',
+      ),
+    ).toBe(true);
     expect(project.seo.slug).toEqual(localeText());
   });
 

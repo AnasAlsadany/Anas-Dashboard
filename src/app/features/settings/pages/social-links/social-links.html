@@ -1,7 +1,11 @@
 @if (state() === 'loading') {
   <app-state-view mode="loading" />
-} @else if (state() === 'error') {
-  <app-state-view mode="error" [message]="lang.t('social.loadError')" (retry)="reload()" />
+} @else if (state() === 'error' || state() === 'offline') {
+  <app-state-view
+    [mode]="state() === 'offline' ? 'offline' : 'error'"
+    [message]="lang.t('social.loadError')"
+    (retry)="reload()"
+  />
 } @else {
   <section class="page social-page" [attr.dir]="locale() === 'ar' ? 'rtl' : 'ltr'">
     <app-page-header [title]="t('nav.social')">
@@ -9,7 +13,7 @@
         *appHasPermission="'site_settings.create'"
         icon="pi pi-plus"
         iconPos="end"
-        styleClass="social-page__add"
+        styleClass="app-add-btn"
         [label]="t('social.addChannel')"
         (clicked)="openAdd()"
       />
@@ -76,8 +80,8 @@
             @if (canUpdate()) {
               <input type="file" accept="image/*" hidden (change)="onImagePicked($event)" />
             }
-            @if (document()?.site?.imageUrl; as imageUrl) {
-              <img [src]="imageUrl" [alt]="document()?.site?.imageName ?? ''" />
+            @if (logoPreviewUrl(); as imageUrl) {
+              <img [src]="imageUrl" [alt]="logoPreviewName()" />
             } @else {
               <span class="social-upload__empty">{{ t('social.uploadHint') }}</span>
             }

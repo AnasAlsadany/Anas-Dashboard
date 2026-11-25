@@ -27,14 +27,6 @@
   line-height: 1.4;
 }
 
-.users-add.p-button {
-  height: 40px;
-  padding-inline: 16px;
-  border-radius: 12px;
-  font-size: 14px;
-  font-weight: 700;
-}
-
 .users-page app-statistics-cards .stats {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
@@ -446,7 +438,13 @@
   color: #e11d48;
 }
 
+.user-detail__badge--inactive {
+  background: #ffedd5;
+  color: #ea580c;
+}
+
 .user-detail__badge--blocked::after,
+.user-detail__badge--inactive::after,
 .user-detail__badge--active::after {
   content: '';
   width: 6px;
@@ -576,6 +574,15 @@
 
 .user-detail__value--success i {
   color: #16a34a;
+  font-size: 8px;
+}
+
+.user-detail__value--warning {
+  color: #ea580c;
+}
+
+.user-detail__value--warning i {
+  color: #ea580c;
   font-size: 8px;
 }
 

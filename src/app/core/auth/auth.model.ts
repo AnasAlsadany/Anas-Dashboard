@@ -25,37 +25,20 @@ export interface LoginRequest {
   remember: boolean;
 }
 
-/** POST /admin/auth/forgot-password */
 export interface ForgotPasswordRequest {
   email: string;
 }
 
-/** 202 body — same whether or not the email is registered. */
-export interface ForgotPasswordResponse {
-  message: string;
-  resend_after: number;
-}
-
-/** POST /admin/auth/verify-code */
-export interface VerifyResetCodeRequest {
+export interface VerifyCodeRequest {
   email: string;
   code: string;
 }
 
-export interface VerifyResetCodePayload {
-  reset_token: string;
-  expires_at: string;
-}
-
-/** POST /admin/auth/reset-password */
 export interface ResetPasswordRequest {
   email: string;
   reset_token: string;
   password: string;
-}
-
-export interface ResetPasswordResponse {
-  message: string;
+  password_confirmation: string;
 }
 
 export interface AuthRoleDto {

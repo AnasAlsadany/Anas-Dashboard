@@ -5,10 +5,10 @@ import { of } from 'rxjs';
 
 import { authSession } from '../../../../core/auth/auth-session.fixture';
 import { AuthService } from '../../../../core/auth/auth.service';
-import { API_LATENCY_MS } from '../../../../core/config/latency';
 import { LanguageService } from '../../../../core/services/language.service';
 import { blankProject, localeText, projectMedia, projectPoint } from '../../models/project.model';
 import { ProjectsService } from '../../services/projects.service';
+import { ProjectsMemoryService } from '../../testing/projects.memory';
 import { ProjectDetailPage } from './project-detail';
 
 const PROJECT_GRANTS = [
@@ -47,7 +47,11 @@ describe('ProjectDetailPage', () => {
   async function render(id: string, api?: Pick<ProjectsService, 'get'>) {
     TestBed.configureTestingModule({
       imports: [ProjectDetailPage],
-      providers: [MessageService, { provide: API_LATENCY_MS, useValue: 0 }, provideRouter([])],
+      providers: [
+        MessageService,
+        { provide: ProjectsService, useClass: ProjectsMemoryService },
+        provideRouter([]),
+      ],
     });
     if (api) {
       TestBed.overrideProvider(ProjectsService, { useValue: api });
@@ -70,12 +74,28 @@ describe('ProjectDetailPage', () => {
     return fixture;
   }
 
+  function openTab(
+    fixture: { detectChanges(): void; nativeElement: HTMLElement },
+    label: string,
+  ): void {
+    const root: HTMLElement = fixture.nativeElement;
+    const tab = [...root.querySelectorAll('button, a, [role="tab"]')].find((item) =>
+      item.textContent?.includes(label),
+    );
+    expect(tab).toBeTruthy();
+    (tab as HTMLElement).click();
+    fixture.detectChanges();
+  }
+
   it('renders project data and edit navigation', async () => {
     const fixture = await render('wasly');
     const root: HTMLElement = fixture.nativeElement;
     expect(root.textContent).toContain('وصلني');
-    expect(root.querySelector('a[href="/projects/wasly/edit"]')).not.toBeNull();
-    expect(root.textContent).toContain('بيانات المشروع');
+    expect(root.querySelector('.detail-status')).not.toBeNull();
+    expect(root.querySelector('a.detail-edit[href="/projects/wasly/edit"]')).not.toBeNull();
+    expect(root.querySelector('a.detail-edit .pi-pen-to-square')).not.toBeNull();
+    expect(root.querySelector('app-page-tabs')).not.toBeNull();
+    expect(root.textContent).toContain('عن المشروع');
   });
 
   it('renders about cards, challenges, tools, solutions, and the solutions image', async () => {
@@ -84,20 +104,21 @@ describe('ProjectDetailPage', () => {
 
     expect(root.textContent).toContain('نبذة عن المشروع');
     expect(root.textContent).toContain('لماذا هذا المشروع');
+    expect(root.querySelector('.detail-photo')).not.toBeNull();
+
+    openTab(fixture, 'أبرز التحديات');
     expect(root.textContent).toContain('أبرز تحديات المشروع');
     expect(root.textContent).toContain('تعقيد التكامل');
-    expect(root.querySelector('.project-detail__list .pi-share-alt')).not.toBeNull();
-
+    expect(root.querySelector('.challenge-grid .pi-share-alt')).not.toBeNull();
     expect(root.textContent).toContain('التكامل الرقمي');
     const tool = root.querySelector('.project-detail__tool img') as HTMLImageElement | null;
     expect(tool?.getAttribute('src')).toBeTruthy();
     expect(tool?.getAttribute('src')).not.toBe('');
 
+    openTab(fixture, 'الحلول المقدمة');
     expect(root.textContent).toContain('الحلول المقدمة');
     expect(root.textContent).toContain('منصة موحدة');
-    const solutionsImage = root.querySelector(
-      '.project-detail__solutions-image',
-    ) as HTMLImageElement | null;
+    const solutionsImage = root.querySelector('.detail-photo') as HTMLImageElement | null;
     expect(solutionsImage?.getAttribute('src')).toBeTruthy();
     expect(solutionsImage?.getAttribute('src')).not.toBe('');
   });
@@ -105,18 +126,24 @@ describe('ProjectDetailPage', () => {
   it('renders uploaded aboutCards, features, and results images and icons', async () => {
     const aboutImage = {
       ...projectPoint(localeText('بطاقة بصورة', 'Card with image'), localeText()),
-      imageName: 'about.png',
-      imageUrl: '/images/about-card.png',
+      image: {
+        ar: { imageName: 'about.png', imageUrl: '/images/about-card.png', imageUuid: null },
+        en: { imageName: '', imageUrl: '', imageUuid: null },
+      },
     };
     const featureIcon = {
       ...projectPoint(localeText('ميزة بأيقونة', 'Feature with icon'), localeText()),
-      imageName: 'icon',
-      imageUrl: 'icon:pi-bolt',
+      image: {
+        ar: { imageName: 'icon', imageUrl: 'icon:pi-bolt', imageUuid: null },
+        en: { imageName: '', imageUrl: '', imageUuid: null },
+      },
     };
     const resultImage = {
       ...projectPoint(localeText(), localeText()),
-      imageName: 'result.png',
-      imageUrl: '/images/result.png',
+      image: {
+        ar: { imageName: 'result.png', imageUrl: '/images/result.png', imageUuid: null },
+        en: { imageName: '', imageUrl: '', imageUuid: null },
+      },
     };
     const project = {
       ...blankProject(),
@@ -126,15 +153,19 @@ describe('ProjectDetailPage', () => {
       challenges: [
         {
           ...projectPoint(localeText('تحدي محفوظ', 'Kept challenge'), localeText()),
-          imageName: 'icon',
-          imageUrl: 'icon:pi-exclamation-triangle',
+          image: {
+            ar: { imageName: 'icon', imageUrl: 'icon:pi-exclamation-triangle', imageUuid: null },
+            en: { imageName: '', imageUrl: '', imageUuid: null },
+          },
         },
       ],
       solutions: [
         {
           ...projectPoint(localeText('حل محفوظ', 'Kept solution'), localeText()),
-          imageName: 'solution.png',
-          imageUrl: '/images/solution.png',
+          image: {
+            ar: { imageName: 'solution.png', imageUrl: '/images/solution.png', imageUuid: null },
+            en: { imageName: '', imageUrl: '', imageUuid: null },
+          },
         },
       ],
       features: [featureIcon],
@@ -143,26 +174,31 @@ describe('ProjectDetailPage', () => {
     const fixture = await render('visuals', { get: () => of(project) });
     const root: HTMLElement = fixture.nativeElement;
 
-    const aboutThumb = [...root.querySelectorAll('.project-detail__list img')].find(
+    const aboutThumb = [...root.querySelectorAll('.challenge-grid img')].find(
       (image) => image.getAttribute('src') === '/images/about-card.png',
     );
     expect(aboutThumb).toBeTruthy();
     expect(root.textContent).toContain('بطاقة بصورة');
 
-    expect(root.querySelector('.project-detail__list .pi-bolt')).not.toBeNull();
+    openTab(fixture, 'خصائص المشروع');
+    expect(root.querySelector('.challenge-grid .pi-bolt')).not.toBeNull();
     expect(root.textContent).toContain('ميزة بأيقونة');
 
-    const resultThumb = [...root.querySelectorAll('.project-detail__list img')].find(
+    openTab(fixture, 'النتائج المحققة');
+    const resultThumb = [...root.querySelectorAll('.challenge-grid img')].find(
       (image) => image.getAttribute('src') === '/images/result.png',
     );
     expect(resultThumb).toBeTruthy();
 
-    expect(root.querySelector('.project-detail__list .pi-exclamation-triangle')).not.toBeNull();
-    const solutionThumb = [...root.querySelectorAll('.project-detail__list img')].find(
+    openTab(fixture, 'أبرز التحديات');
+    expect(root.querySelector('.challenge-grid .pi-exclamation-triangle')).not.toBeNull();
+    expect(root.textContent).toContain('تحدي محفوظ');
+
+    openTab(fixture, 'الحلول المقدمة');
+    const solutionThumb = [...root.querySelectorAll('.challenge-grid img')].find(
       (image) => image.getAttribute('src') === '/images/solution.png',
     );
     expect(solutionThumb).toBeTruthy();
-    expect(root.textContent).toContain('تحدي محفوظ');
     expect(root.textContent).toContain('حل محفوظ');
   });
 
@@ -172,11 +208,39 @@ describe('ProjectDetailPage', () => {
       id: 'invalid-visuals',
       name: localeText('نقاط فارغة', 'Empty points'),
       aboutCards: [
-        { ...projectPoint(), imageName: '', imageUrl: '' },
-        { ...projectPoint(), imageName: 'bad', imageUrl: 'icon:not valid' },
+        {
+          ...projectPoint(),
+          image: {
+            ar: { imageName: '', imageUrl: '', imageUuid: null },
+            en: { imageName: '', imageUrl: '', imageUuid: null },
+          },
+        },
+        {
+          ...projectPoint(),
+          image: {
+            ar: { imageName: 'bad', imageUrl: 'icon:not valid', imageUuid: null },
+            en: { imageName: '', imageUrl: '', imageUuid: null },
+          },
+        },
       ],
-      features: [{ ...projectPoint(), imageName: '', imageUrl: '' }],
-      results: [{ ...projectPoint(), imageName: 'bad', imageUrl: 'icon:' }],
+      features: [
+        {
+          ...projectPoint(),
+          image: {
+            ar: { imageName: '', imageUrl: '', imageUuid: null },
+            en: { imageName: '', imageUrl: '', imageUuid: null },
+          },
+        },
+      ],
+      results: [
+        {
+          ...projectPoint(),
+          image: {
+            ar: { imageName: 'bad', imageUrl: 'icon:', imageUuid: null },
+            en: { imageName: '', imageUrl: '', imageUuid: null },
+          },
+        },
+      ],
       challenges: [projectPoint()],
       solutions: [projectPoint()],
     };
@@ -184,11 +248,23 @@ describe('ProjectDetailPage', () => {
     const root: HTMLElement = fixture.nativeElement;
 
     expect(root.textContent).not.toContain('نبذة عن المشروع');
-    expect(root.textContent).not.toContain('خصائص المشروع');
-    expect(root.textContent).not.toContain('النتائج المحققة');
+    expect(root.querySelectorAll('.challenge-grid li')).toHaveLength(0);
+
+    openTab(fixture, 'خصائص المشروع');
+    expect(root.querySelector('.detail-panel')).toBeNull();
+    expect(root.querySelectorAll('.challenge-grid li')).toHaveLength(0);
+
+    openTab(fixture, 'النتائج المحققة');
+    expect(root.querySelector('.detail-panel')).toBeNull();
+    expect(root.querySelectorAll('.challenge-grid li')).toHaveLength(0);
+
+    openTab(fixture, 'أبرز التحديات');
     expect(root.textContent).not.toContain('أبرز تحديات المشروع');
-    expect(root.textContent).not.toContain('الحلول المقدمة');
-    expect(root.querySelectorAll('.project-detail__list li')).toHaveLength(0);
+    expect(root.querySelectorAll('.challenge-grid li')).toHaveLength(0);
+
+    openTab(fixture, 'الحلول المقدمة');
+    expect(root.querySelector('.detail-panel')).toBeNull();
+    expect(root.querySelectorAll('.challenge-grid li')).toHaveLength(0);
     expect(
       [...root.querySelectorAll('img')].every((image) => (image.getAttribute('src') ?? '') !== ''),
     ).toBe(true);
@@ -202,10 +278,14 @@ describe('ProjectDetailPage', () => {
 
     expect(root.textContent).toContain('About the project');
     expect(root.textContent).toContain('Why this project');
+
+    openTab(fixture, 'Key challenges');
     expect(root.textContent).toContain('Key project challenges');
     expect(root.textContent).toContain('Integration complexity');
     expect(root.textContent).toContain('Digital integration');
     expect(root.textContent).toContain('Integration tool');
+
+    openTab(fixture, 'Solutions and gallery');
     expect(root.textContent).toContain('Provided solutions');
     expect(root.textContent).toContain('Unified platform');
   });
@@ -216,7 +296,10 @@ describe('ProjectDetailPage', () => {
       id: 'sparse',
       name: localeText('مشروع فارغ', 'Sparse project'),
       summary: localeText(),
-      coverUrl: '',
+      cover: {
+        ar: { imageName: '', imageUrl: '', imageUuid: null },
+        en: { imageName: '', imageUrl: '', imageUuid: null },
+      },
       aboutCards: [projectPoint()],
       challenges: [projectPoint()],
       tools: [projectMedia()],
@@ -224,15 +307,35 @@ describe('ProjectDetailPage', () => {
       solutionsImage: projectMedia(),
       features: [projectPoint(localeText('ميزة', 'Feature'), localeText())],
       results: [projectPoint()],
-      gallery: [{ id: 'g1', imageName: '', imageUrl: '' }],
+      gallery: [
+        {
+          id: 'g1',
+          image: {
+            ar: { imageName: '', imageUrl: '', imageUuid: null },
+            en: { imageName: '', imageUrl: '', imageUuid: null },
+          },
+        },
+      ],
       identityButtons: [
         {
           id: 'id1',
           title: localeText(),
           body: localeText(),
           images: [
-            { id: 'i1', imageName: '', imageUrl: '' },
-            { id: 'i2', imageName: 'icon', imageUrl: 'icon:pi-star' },
+            {
+              id: 'i1',
+              image: {
+                ar: { imageName: '', imageUrl: '', imageUuid: null },
+                en: { imageName: '', imageUrl: '', imageUuid: null },
+              },
+            },
+            {
+              id: 'i2',
+              image: {
+                ar: { imageName: 'icon', imageUrl: 'icon:pi-star', imageUuid: null },
+                en: { imageName: '', imageUrl: '', imageUuid: null },
+              },
+            },
           ],
         },
       ],
@@ -240,30 +343,36 @@ describe('ProjectDetailPage', () => {
     const fixture = await render('sparse', { get: () => of(empty) });
     const root: HTMLElement = fixture.nativeElement;
 
-    expect(root.querySelector('.project-detail__cover')).toBeNull();
+    expect(root.querySelector('.detail-photo')).toBeNull();
     expect(root.textContent).not.toContain('نبذة عن المشروع');
+
+    openTab(fixture, 'أبرز التحديات');
     expect(root.textContent).not.toContain('أبرز تحديات المشروع');
     expect(root.textContent).not.toContain('التكامل الرقمي');
-    expect(root.textContent).not.toContain('الحلول المقدمة');
-    expect(root.textContent).toContain('خصائص المشروع');
+    expect(root.querySelector('.detail-panel')).toBeNull();
+
+    openTab(fixture, 'الحلول المقدمة');
+    expect(root.querySelector('.detail-photo')).toBeNull();
+
+    openTab(fixture, 'خصائص المشروع');
+    expect(root.querySelector('.detail-panel h2')?.textContent).toContain('خصائص المشروع');
     expect(root.textContent).toContain('ميزة');
-    expect(root.textContent).not.toContain('النتائج المحققة');
+
+    openTab(fixture, 'النتائج المحققة');
+    expect(root.querySelector('.detail-panel')).toBeNull();
 
     expect(
       [...root.querySelectorAll('img')].every((image) => (image.getAttribute('src') ?? '') !== ''),
     ).toBe(true);
   });
 
-  it('renders identity button title, body, and non-empty images', async () => {
+  it('renders identity with tube tabs and non-empty images', async () => {
     const fixture = await render('wasly');
     const root: HTMLElement = fixture.nativeElement;
-    const identityTab = [...root.querySelectorAll('button, a, [role="tab"]')].find((item) =>
-      item.textContent?.includes('الهوية الرقمية'),
-    );
-    expect(identityTab).toBeTruthy();
-    (identityTab as HTMLElement).click();
-    fixture.detectChanges();
+    openTab(fixture, 'الهوية الرقمية');
 
+    expect(root.querySelector('.stat-tabs')).not.toBeNull();
+    expect(root.querySelector('.stat-tab.is-active')).not.toBeNull();
     expect(root.textContent).toContain('الهوية البصرية');
     expect(root.textContent).toContain('ألوان وصور تعكس شخصية العلامة للمشروع.');
     const images = root.querySelectorAll('.project-detail__identity img');
@@ -271,12 +380,21 @@ describe('ProjectDetailPage', () => {
     expect([...images].every((image) => (image as HTMLImageElement).src.length > 0)).toBe(true);
   });
 
-  it('keeps existing tabs and edit navigation', async () => {
+  it('uses page tabs and products-style edit navigation', async () => {
     const fixture = await render('wasly');
     const root: HTMLElement = fixture.nativeElement;
     const labels = [...root.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent?.trim());
-    expect(labels).toEqual(['بيانات المشروع', 'المعرض', 'الهوية الرقمية', 'SEO']);
-    expect(root.querySelector('a[href="/projects/wasly/edit"]')).not.toBeNull();
+    expect(labels).toEqual([
+      'عن المشروع',
+      'أبرز التحديات والأدوات',
+      'الحلول المقدمة ومعرض المشروع',
+      'خصائص المشروع',
+      'النتائج المحققة',
+      'الهوية الرقمية',
+      'SEO',
+    ]);
+    expect(root.querySelector('a.detail-edit[href="/projects/wasly/edit"]')).not.toBeNull();
+    expect(root.querySelector('button.detail-delete')).not.toBeNull();
   });
 
   it('shows an empty state for a missing project id', async () => {

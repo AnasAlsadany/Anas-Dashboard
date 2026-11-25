@@ -12,20 +12,37 @@
           class="feature-card__remove"
           [disabled]="editor.draft().sectors.length === 1 || editor.saving()"
           [attr.aria-label]="editor.copy('product.deleteTitle')"
-          (click)="editor.removeMedia('sectors', index)"
+          (click)="editor.removeSector(index)"
         >
           <i class="pi pi-times" aria-hidden="true"></i>
         </button>
         <app-product-upload
-          [locale]="editor.locale()"
-          [name]="sector.imageName"
-          [url]="sector.imageUrl"
-          (picked)="editor.setMediaImage('sectors', index, $event)"
+          locale="ar"
+          [actions]="true"
+          [clearable]="true"
+          [name]="sector.image.ar.imageName"
+          [url]="sector.image.ar.imageUrl"
+          (picked)="editor.setSectorImage(index, $event, 'ar')"
+          (cleared)="editor.clearSectorImage(index, 'ar')"
         />
+        @if (editor.sectorImageError(index)) {
+          <app-field-error>{{ editor.sectorImageError(index) }}</app-field-error>
+        }
+        @if (editor.locale() === 'en') {
+          <app-product-upload
+            locale="en"
+            [actions]="true"
+            [clearable]="true"
+            [name]="sector.image.en.imageName"
+            [url]="sector.image.en.imageUrl"
+            (picked)="editor.setSectorImage(index, $event, 'en')"
+            (cleared)="editor.clearSectorImage(index, 'en')"
+          />
+        }
       </div>
     }
   </div>
-  <button type="button" class="add-row" (click)="editor.addMedia('sectors')">
+  <button type="button" class="add-row" (click)="editor.addSector()">
     <span class="add-row__mark" aria-hidden="true"><i class="pi pi-plus"></i></span>
     {{ editor.copy('product.addSector') }}
   </button>
@@ -43,19 +60,24 @@
           [title]="editor.text(item.title)"
           [titleLabel]="editor.copy('product.challengeTitle')"
           [titlePlaceholder]="editor.copy('product.challengeTitlePh')"
+          [titleError]="editor.challengeTitleError(index)"
           [body]="editor.text(item.body)"
           [bodyLabel]="editor.copy('product.challengeBody')"
           [bodyPlaceholder]="editor.copy('product.challengeBodyPh')"
+          [bodyError]="editor.challengeBodyError(index)"
           [iconLabel]="editor.copy('product.icon')"
-          [imageName]="item.imageName"
-          [imageUrl]="item.imageUrl"
+          [imageName]="item.image[editor.locale()].imageName"
+          [imageUrl]="item.image[editor.locale()].imageUrl"
           [locale]="editor.locale()"
+          [actions]="true"
+          [clearable]="true"
           [removeDisabled]="editor.draft().challenges.length === 1"
           [removeLabel]="editor.copy('product.deleteTitle')"
           removeIcon="pi-times"
           (titleChange)="editor.setPoint('challenges', index, 'title', $event)"
           (bodyChange)="editor.setPoint('challenges', index, 'body', $event)"
           (imageChange)="editor.setPointImage('challenges', index, $event)"
+          (imageCleared)="editor.clearPointImage('challenges', index)"
           (removed)="editor.removePoint('challenges', index)"
         />
       </div>
@@ -81,15 +103,17 @@
       [bodyLabel]="editor.copy('product.solutionBody')"
       [bodyPlaceholder]="editor.copy('product.solutionBodyPh')"
       [iconLabel]="editor.copy('product.uploadLabel')"
-      [imageName]="editor.draft().solution.imageName"
-      [imageUrl]="editor.draft().solution.imageUrl"
+      [imageName]="editor.draft().solution.image[editor.locale()].imageName"
+      [imageUrl]="editor.draft().solution.image[editor.locale()].imageUrl"
       [locale]="editor.locale()"
-      [actions]="false"
+      [actions]="true"
+      [clearable]="true"
       [removeDisabled]="true"
       [removeLabel]="editor.copy('product.deleteTitle')"
       (titleChange)="editor.setSingle('solution', 'title', $event)"
       (bodyChange)="editor.setSingle('solution', 'body', $event)"
       (imageChange)="editor.setSingleImage('solution', $event)"
+      (imageCleared)="editor.clearSingleImage('solution')"
     />
   </div>
 </section>

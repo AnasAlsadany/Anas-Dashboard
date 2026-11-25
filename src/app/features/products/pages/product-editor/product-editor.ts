@@ -16,6 +16,7 @@ import { catchError, finalize, map, of, switchMap } from 'rxjs';
 
 import type { AppLanguage } from '../../../../core/i18n/translations';
 import { LanguageService } from '../../../../core/services/language.service';
+import { NetworkStatusService } from '../../../../core/services/network-status.service';
 import {
   EditorShell,
   type EditorShellLabels,
@@ -30,23 +31,111 @@ import {
   ToolsStep,
   UnitsStep,
 } from './steps/product-steps';
+import { PRODUCT_STEPS } from '../../constants/product-steps';
 import {
-  PRODUCT_STEPS,
+  PRODUCT_META_KEYWORD_MAX,
+  PRODUCT_SEO_DESCRIPTION_MAX,
+  PRODUCT_SHORT_DESCRIPTION_MAX,
+} from '../../constants/product-limits';
+import {
   blankProduct,
   readLocale,
-  productFaq,
-  productMedia,
-  productPoint,
-  productStat,
-  productUnit,
   type LocaleText,
   type Product,
 } from '../../models/product.model';
+import {
+  draftAddFaq,
+  draftAddMedia,
+  draftAddPoint,
+  draftAddSector,
+  draftAddStat,
+  draftAddUnit,
+  draftAddUnitPoint,
+  draftClearCover,
+  draftClearMediaImage,
+  draftClearPointImage,
+  draftClearSectorImage,
+  draftClearSolutionImage,
+  draftClearStatImage,
+  draftClearUnitImage,
+  draftClearUnitPointImage,
+  draftRemoveFaq,
+  draftRemoveMedia,
+  draftRemovePoint,
+  draftRemoveSector,
+  draftRemoveStat,
+  draftRemoveUnit,
+  draftRemoveUnitPoint,
+  draftSetCover,
+  draftSetCoverText,
+  draftSetFaq,
+  draftSetLocaleField,
+  draftSetMediaImage,
+  draftSetMediaText,
+  draftSetPointField,
+  draftSetPointImage,
+  draftSetSectorImage,
+  draftSetSeo,
+  draftSetSolutionField,
+  draftSetSolutionImage,
+  draftSetStat,
+  draftSetStatImage,
+  draftSetUnit,
+  draftSetUnitImage,
+  draftSetUnitPoint,
+  draftSetUnitPointImage,
+  type ProductMediaList,
+  type ProductPointList,
+} from '../../utils/product-draft';
+import {
+  clearServerErrorPaths,
+  clearServerErrorPrefix,
+  faqAnswerErrorMessage,
+  faqQuestionErrorMessage,
+  highlightTitleErrorMessage,
+  identityTitleErrorMessage,
+  integrationImageErrorMessage,
+  isSectorArabicImageInvalid,
+  keywordsErrorMessage,
+  nameErrorMessage,
+  pointTitleBodyErrorMessage,
+  sectorImageErrorMessage,
+  serverErrorMessage,
+  serverErrorPrefixMessage,
+  slugErrorMessage,
+  statTitleErrorMessage,
+  statValueErrorMessage,
+  summaryErrorMessage,
+  toolTitleBodyErrorMessage,
+  unitTitleErrorMessage,
+  workflowStepBodyErrorMessage,
+  workflowStepTitleErrorMessage,
+} from '../../utils/product-errors';
+import {
+  isValidMetaKeywords,
+  isValidProductSlug,
+  isValidShortDescription,
+  longestProductKeywordLength,
+} from '../../utils/product-field-rules';
+import {
+  createModeEditorState,
+  editLoadSuccessState,
+  type ProductEditorLoadState,
+} from '../../utils/product-editor-load';
+import {
+  decideNextStep,
+  decidePreviousStep,
+  decideSelectStep,
+  type ProductEditorNavDecision,
+  type ProductEditorNavInput,
+} from '../../utils/product-editor-navigation';
+import {
+  evaluateProductPersist,
+  resolveServerErrorFocus,
+} from '../../utils/product-editor-persist';
+import { isApiError, loadFailureStatus, type FieldErrors } from '../../../../core/http/api-error';
 import { ObjectUrls } from '../../../../shared/components/product-upload/object-urls';
 import { ProductsService } from '../../services/products.service';
-
-type PointList = 'features' | 'challenges' | 'offer' | 'results' | 'steps' | 'highlights';
-type MediaList = 'sectors' | 'tools' | 'integrations' | 'identity';
 
 @Component({
   selector: 'app-product-editor',
@@ -71,6 +160,7 @@ export class ProductEditor {
   private readonly route = inject(ActivatedRoute);
   private readonly messages = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly network = inject(NetworkStatusService);
   readonly lang = inject(LanguageService);
 
   readonly id = input('');
@@ -80,11 +170,27 @@ export class ProductEditor {
 
   readonly passed = signal(-1);
   readonly draft = signal<Product>(blankProduct());
-  readonly status = signal<'loading' | 'ready' | 'missing' | 'error'>(
+  readonly status = signal<'loading' | 'ready' | 'missing' | 'error' | 'offline'>(
     this.route.snapshot.data['mode'] === 'edit' ? 'loading' : 'ready',
   );
   readonly saving = signal(false);
   readonly nameError = signal(false);
+  readonly slugInvalid = computed(
+    () => !isValidProductSlug(readLocale(this.draft().seo.slug, this.locale())),
+  );
+  readonly summaryMax = PRODUCT_SHORT_DESCRIPTION_MAX;
+  readonly descriptionMax = PRODUCT_SEO_DESCRIPTION_MAX;
+  readonly summaryInvalid = computed(
+    () => !isValidShortDescription(readLocale(this.draft().summary, this.locale())),
+  );
+  readonly keywordsMax = PRODUCT_META_KEYWORD_MAX;
+  readonly keywordsLongest = computed(() =>
+    longestProductKeywordLength(readLocale(this.draft().seo.keywords, this.locale())),
+  );
+  readonly keywordsInvalid = computed(
+    () => !isValidMetaKeywords(readLocale(this.draft().seo.keywords, this.locale())),
+  );
+  readonly serverErrors = signal<FieldErrors>({});
   private readonly reload = signal(0);
 
   readonly mode = toSignal(
@@ -118,7 +224,6 @@ export class ProductEditor {
   );
 
   constructor() {
-
     this.destroyRef.onDestroy(() => this.objectUrls.abandon(this.draft()));
 
     effect(() => {
@@ -127,11 +232,7 @@ export class ProductEditor {
         if (editing) {
           return;
         }
-        this.status.set('ready');
-        this.draft.set(blankProduct());
-        this.step.set(0);
-        this.passed.set(-1);
-        this.nameError.set(false);
+        this.applyLoadState(createModeEditorState());
       });
     });
 
@@ -144,7 +245,7 @@ export class ProductEditor {
           this.status.set('loading');
           return this.api.get(request.id).pipe(
             map((product) => ({ failed: false as const, product })),
-            catchError(() => of({ failed: true as const, product: null })),
+            catchError((error: unknown) => of({ failed: true as const, product: null, error })),
           );
         }),
         takeUntilDestroyed(),
@@ -154,18 +255,14 @@ export class ProductEditor {
           return;
         }
         if (result.failed) {
-          this.status.set('error');
+          this.status.set(loadFailureStatus(result.error, this.network.online()));
           return;
         }
         if (!result.product) {
           this.status.set('missing');
           return;
         }
-        this.draft.set(result.product);
-        this.step.set(0);
-        this.passed.set(-1);
-        this.nameError.set(false);
-        this.status.set('ready');
+        this.applyLoadState(editLoadSuccessState(result.product));
       });
   }
 
@@ -200,34 +297,15 @@ export class ProductEditor {
   }
 
   select(index: number | undefined): void {
-    if (this.saving() || index === undefined || (this.mode() === 'create' && index > this.step())) {
-      return;
-    }
-    this.step.set(index);
+    this.applyNavDecision(decideSelectStep(this.navInput(), index));
   }
 
   next(): void {
-    if (this.saving() || this.lastStep()) {
-      return;
-    }
-    if (this.mode() === 'create' && this.step() === 0 && !this.namesValid()) {
-      this.nameError.set(true);
-      return;
-    }
-    const leaving = this.step();
-    this.passed.update((current) => Math.max(current, leaving));
-    this.step.set(leaving + 1);
+    this.applyNavDecision(decideNextStep(this.navInput()));
   }
 
   previous(): void {
-    if (this.saving()) {
-      return;
-    }
-    if (this.step() === 0) {
-      void this.router.navigate(['/products']);
-      return;
-    }
-    this.step.update((current) => current - 1);
+    this.applyNavDecision(decidePreviousStep(this.navInput()));
   }
 
   saveDraft(): void {
@@ -246,108 +324,319 @@ export class ProductEditor {
     this.persist(published, published ? 'product.saved' : 'product.draftSaved', false);
   }
 
-  setField(key: 'name' | 'summary' | 'category', event: Event): void {
+  setField(key: 'name' | 'summary', event: Event): void {
     const value = this.read(event);
     if (value === undefined) {
       return;
     }
-    this.draft.update((current) => ({
-      ...current,
-      [key]: this.writeLocale(current[key], value),
-    }));
+    const language = this.locale();
+    this.draft.update((current) => draftSetLocaleField(current, key, language, value));
     if (key === 'name') {
       this.nameError.set(false);
+      this.dropServerErrors(`title.${language}`);
+    }
+    if (key === 'summary') {
+      this.dropServerErrors(`short_description.${language}`, `description.${language}`);
     }
   }
 
-  setPoint(list: PointList, index: number, field: 'title' | 'body', event: Event): void {
+  setPoint(list: ProductPointList, index: number, field: 'title' | 'body', event: Event): void {
     const value = this.read(event);
     if (value === undefined) {
       return;
     }
-    this.draft.update((current) => ({
-      ...current,
-      [list]: this.patchLocaleField(current[list], index, field, value),
-    }));
+    const language = this.locale();
+    this.draft.update((current) =>
+      draftSetPointField(current, list, index, field, language, value),
+    );
+    const apiField = field === 'body' ? 'short_description' : 'title';
+    if (list === 'steps') {
+      this.dropServerErrors(`workflow_steps.${index}.${apiField}.${language}`);
+    } else if (list === 'challenges' || list === 'features') {
+      this.dropServerErrors(`${list}.${index}.${apiField}.${language}`);
+    }
   }
 
-  addPoint(list: PointList): void {
-    this.draft.update((current) => ({ ...current, [list]: [...current[list], productPoint()] }));
+  addPoint(list: ProductPointList): void {
+    this.draft.update((current) => draftAddPoint(current, list));
   }
 
-  removePoint(list: PointList, index: number): void {
-    this.draft.update((current) => ({
-      ...current,
-      [list]:
-        current[list].length > 1
-          ? current[list].filter((_, item) => item !== index)
-          : current[list],
-    }));
+  removePoint(list: ProductPointList, index: number): void {
+    this.draft.update((current) => draftRemovePoint(current, list, index));
   }
 
-  setPointImage(list: PointList, index: number, file: { name: string; url: string }): void {
-    this.draft.update((current) => ({
-      ...current,
-      [list]: this.mapAt(current[list], index, (item) => this.withImage(item, file)),
-    }));
+  setPointImage(list: ProductPointList, index: number, file: { name: string; url: string }): void {
+    const language = this.locale();
+    this.draft.update((current) => draftSetPointImage(current, list, index, language, file));
   }
 
-  setMediaText(list: MediaList, index: number, field: 'title' | 'body', event: Event): void {
+  clearPointImage(list: ProductPointList, index: number): void {
+    const language = this.locale();
+    this.draft.update((current) => draftClearPointImage(current, list, index, language));
+  }
+
+  setMediaText(list: ProductMediaList, index: number, field: 'title' | 'body', event: Event): void {
     const value = this.read(event);
     if (value === undefined) {
       return;
     }
-    this.draft.update((current) => ({
-      ...current,
-      [list]: this.patchLocaleField(current[list], index, field, value),
-    }));
+    const language = this.locale();
+    this.draft.update((current) => draftSetMediaText(current, list, index, field, language, value));
   }
 
-  setMediaImage(list: MediaList, index: number, file: { name: string; url: string }): void {
-    this.draft.update((current) => ({
-      ...current,
-      [list]: this.mapAt(current[list], index, (item) => this.withImage(item, file)),
-    }));
+  setMediaImage(list: ProductMediaList, index: number, file: { name: string; url: string }): void {
+    const language = this.locale();
+    this.draft.update((current) => draftSetMediaImage(current, list, index, language, file));
   }
 
-  addMedia(list: MediaList): void {
-    this.draft.update((current) => ({ ...current, [list]: [...current[list], productMedia()] }));
+  clearMediaImage(list: ProductMediaList, index: number): void {
+    const language = this.locale();
+    this.draft.update((current) => draftClearMediaImage(current, list, index, language));
   }
 
-  removeMedia(list: MediaList, index: number): void {
-    this.draft.update((current) => ({
-      ...current,
-      [list]:
-        current[list].length > 1
-          ? current[list].filter((_, item) => item !== index)
-          : current[list],
-    }));
+  addMedia(list: ProductMediaList): void {
+    this.draft.update((current) => draftAddMedia(current, list));
   }
 
-  setSingle(key: 'solution', field: 'title' | 'body', event: Event): void {
+  removeMedia(list: ProductMediaList, index: number): void {
+    this.draft.update((current) => draftRemoveMedia(current, list, index));
+  }
+
+  addSector(): void {
+    this.draft.update((current) => draftAddSector(current));
+  }
+
+  removeSector(index: number): void {
+    this.draft.update((current) => draftRemoveSector(current, index));
+  }
+
+  setSectorImage(
+    index: number,
+    file: { name: string; url: string },
+    language: AppLanguage = this.locale(),
+  ): void {
+    this.draft.update((current) => draftSetSectorImage(current, index, language, file));
+    this.dropServerErrors(`sectors.${index}.image.${language}`);
+  }
+
+  clearSectorImage(index: number, language: AppLanguage = this.locale()): void {
+    this.draft.update((current) => draftClearSectorImage(current, index, language));
+    this.dropServerErrors(`sectors.${index}.image.${language}`);
+  }
+
+  sectorArabicImageInvalid(index: number): boolean {
+    return isSectorArabicImageInvalid(this.draft(), index);
+  }
+
+  sectorImageError(index: number): string {
+    return sectorImageErrorMessage(this.draft(), index, this.serverErrors(), (key) =>
+      this.copy(key),
+    );
+  }
+
+  workflowStepTitleError(index: number): string {
+    return workflowStepTitleErrorMessage(
+      this.draft(),
+      index,
+      this.locale(),
+      this.serverErrors(),
+      (key) => this.copy(key),
+    );
+  }
+
+  workflowStepBodyError(index: number): string {
+    return workflowStepBodyErrorMessage(
+      this.draft(),
+      index,
+      this.locale(),
+      this.serverErrors(),
+      (key) => this.copy(key),
+    );
+  }
+
+  featureTitleError(index: number): string {
+    return this.pointError('features', index, 'title');
+  }
+
+  featureBodyError(index: number): string {
+    return this.pointError('features', index, 'body');
+  }
+
+  challengeTitleError(index: number): string {
+    return this.pointError('challenges', index, 'title');
+  }
+
+  challengeBodyError(index: number): string {
+    return this.pointError('challenges', index, 'body');
+  }
+
+  offerTitleError(index: number): string {
+    return this.pointError('offer', index, 'title');
+  }
+
+  offerBodyError(index: number): string {
+    return this.pointError('offer', index, 'body');
+  }
+
+  resultTitleError(index: number): string {
+    return this.pointError('results', index, 'title');
+  }
+
+  resultBodyError(index: number): string {
+    return this.pointError('results', index, 'body');
+  }
+
+  toolTitleError(index: number): string {
+    return toolTitleBodyErrorMessage(
+      this.draft(),
+      index,
+      'title',
+      this.locale(),
+      this.serverErrors(),
+      (key) => this.copy(key),
+    );
+  }
+
+  toolBodyError(index: number): string {
+    return toolTitleBodyErrorMessage(
+      this.draft(),
+      index,
+      'body',
+      this.locale(),
+      this.serverErrors(),
+      (key) => this.copy(key),
+    );
+  }
+
+  integrationImageError(index: number): string {
+    return integrationImageErrorMessage(this.draft(), index, this.serverErrors(), (key) =>
+      this.copy(key),
+    );
+  }
+
+  unitTitleError(index: number): string {
+    return unitTitleErrorMessage(this.draft(), index, this.locale(), this.serverErrors(), (key) =>
+      this.copy(key),
+    );
+  }
+
+  identityTitleError(index: number): string {
+    return identityTitleErrorMessage(
+      this.draft(),
+      index,
+      this.locale(),
+      this.serverErrors(),
+      (key) => this.copy(key),
+    );
+  }
+
+  highlightTitleError(index: number): string {
+    return highlightTitleErrorMessage(
+      this.draft(),
+      index,
+      this.locale(),
+      this.serverErrors(),
+      (key) => this.copy(key),
+    );
+  }
+
+  faqQuestionError(index: number): string {
+    return faqQuestionErrorMessage(this.draft(), index, this.locale(), this.serverErrors(), (key) =>
+      this.copy(key),
+    );
+  }
+
+  faqAnswerError(index: number): string {
+    return faqAnswerErrorMessage(this.draft(), index, this.locale(), this.serverErrors(), (key) =>
+      this.copy(key),
+    );
+  }
+
+  statTitleError(index: number): string {
+    return statTitleErrorMessage(this.draft(), index, this.locale(), this.serverErrors(), (key) =>
+      this.copy(key),
+    );
+  }
+
+  statValueError(index: number): string {
+    return statValueErrorMessage(this.draft(), index, this.locale(), this.serverErrors(), (key) =>
+      this.copy(key),
+    );
+  }
+
+  slugErrorText(): string {
+    return slugErrorMessage(this.slugInvalid(), this.serverErrors(), (key) => this.copy(key));
+  }
+
+  summaryErrorText(): string {
+    return summaryErrorMessage(this.summaryInvalid(), this.locale(), this.serverErrors(), (key) =>
+      this.copy(key),
+    );
+  }
+
+  keywordsErrorText(): string {
+    return keywordsErrorMessage(this.keywordsInvalid(), this.locale(), this.serverErrors(), (key) =>
+      this.copy(key),
+    );
+  }
+
+  nameErrorText(): string {
+    return nameErrorMessage(this.nameError(), this.locale(), this.serverErrors(), (key) =>
+      this.copy(key),
+    );
+  }
+
+  private pointError(
+    list: 'features' | 'challenges' | 'offer' | 'results',
+    index: number,
+    field: 'title' | 'body',
+  ): string {
+    return pointTitleBodyErrorMessage(
+      this.draft(),
+      list,
+      index,
+      field,
+      this.locale(),
+      this.serverErrors(),
+      (key) => this.copy(key),
+    );
+  }
+
+  serverField(path: string): string {
+    return serverErrorMessage(this.serverErrors(), path);
+  }
+
+  serverFieldPrefix(prefix: string): string {
+    return serverErrorPrefixMessage(this.serverErrors(), prefix);
+  }
+
+  setSingle(_key: 'solution', field: 'title' | 'body', event: Event): void {
     const value = this.read(event);
     if (value === undefined) {
       return;
     }
-    this.draft.update((current) => ({
-      ...current,
-      [key]: { ...current[key], [field]: this.writeLocale(current[key][field], value) },
-    }));
+    const language = this.locale();
+    this.draft.update((current) => draftSetSolutionField(current, field, language, value));
   }
 
-  setSingleImage(key: 'solution', file: { name: string; url: string }): void {
-    this.draft.update((current) => ({
-      ...current,
-      [key]: this.withImage(current[key], file),
-    }));
+  setSingleImage(_key: 'solution', file: { name: string; url: string }): void {
+    const language = this.locale();
+    this.draft.update((current) => draftSetSolutionImage(current, language, file));
+  }
+
+  clearSingleImage(_key: 'solution'): void {
+    const language = this.locale();
+    this.draft.update((current) => draftClearSolutionImage(current, language));
   }
 
   setCover(kind: 'cover' | 'thumb', file: { name: string; url: string }): void {
-    this.draft.update((current) =>
-      kind === 'cover'
-        ? { ...current, coverName: file.name, coverUrl: file.url }
-        : { ...current, thumbName: file.name, thumbUrl: file.url },
-    );
+    const language = this.locale();
+    this.draft.update((current) => draftSetCover(current, kind, language, file));
+  }
+
+  clearCover(kind: 'cover' | 'thumb'): void {
+    const language = this.locale();
+    this.draft.update((current) => draftClearCover(current, kind, language));
   }
 
   setCoverText(key: 'coverTitle' | 'coverAlt' | 'thumbTitle' | 'thumbAlt', event: Event): void {
@@ -355,10 +644,8 @@ export class ProductEditor {
     if (value === undefined) {
       return;
     }
-    this.draft.update((current) => ({
-      ...current,
-      [key]: this.writeLocale(current[key], value),
-    }));
+    const language = this.locale();
+    this.draft.update((current) => draftSetCoverText(current, key, language, value));
   }
 
   setStat(index: number, field: 'value' | 'label' | 'body', event: Event): void {
@@ -366,39 +653,31 @@ export class ProductEditor {
     if (value === undefined) {
       return;
     }
-    this.draft.update((current) => ({
-      ...current,
-      stats: current.stats.map((item, itemIndex) => {
-        if (itemIndex !== index) {
-          return item;
-        }
-        if (field === 'value') {
-          return { ...item, value };
-        }
-        return { ...item, [field]: this.writeLocale(item[field], value) };
-      }),
-    }));
+    const language = this.locale();
+    if (field === 'value') {
+      this.dropServerErrors(`stats.${index}.value.${language}`);
+    } else if (field === 'label') {
+      this.dropServerErrors(`stats.${index}.title.${language}`);
+    }
+    this.draft.update((current) => draftSetStat(current, index, field, language, value));
   }
 
   setStatImage(index: number, file: { name: string; url: string }): void {
-    this.draft.update((current) => ({
-      ...current,
-      stats: this.mapAt(current.stats, index, (item) => this.withImage(item, file)),
-    }));
+    const language = this.locale();
+    this.draft.update((current) => draftSetStatImage(current, index, language, file));
+  }
+
+  clearStatImage(index: number): void {
+    const language = this.locale();
+    this.draft.update((current) => draftClearStatImage(current, index, language));
   }
 
   addStat(): void {
-    this.draft.update((current) => ({ ...current, stats: [...current.stats, productStat()] }));
+    this.draft.update((current) => draftAddStat(current));
   }
 
   removeStat(index: number): void {
-    this.draft.update((current) => ({
-      ...current,
-      stats:
-        current.stats.length > 1
-          ? current.stats.filter((_, item) => item !== index)
-          : current.stats,
-    }));
+    this.draft.update((current) => draftRemoveStat(current, index));
   }
 
   setUnit(index: number, field: 'title' | 'body', event: Event): void {
@@ -406,17 +685,18 @@ export class ProductEditor {
     if (value === undefined) {
       return;
     }
-    this.draft.update((current) => ({
-      ...current,
-      units: this.patchLocaleField(current.units, index, field, value),
-    }));
+    const language = this.locale();
+    this.draft.update((current) => draftSetUnit(current, index, field, language, value));
   }
 
   setUnitImage(index: number, file: { name: string; url: string }): void {
-    this.draft.update((current) => ({
-      ...current,
-      units: this.mapAt(current.units, index, (item) => this.withImage(item, file)),
-    }));
+    const language = this.locale();
+    this.draft.update((current) => draftSetUnitImage(current, index, language, file));
+  }
+
+  clearUnitImage(index: number): void {
+    const language = this.locale();
+    this.draft.update((current) => draftClearUnitImage(current, index, language));
   }
 
   setUnitPoint(unitIndex: number, pointIndex: number, field: 'title' | 'body', event: Event): void {
@@ -424,17 +704,10 @@ export class ProductEditor {
     if (value === undefined) {
       return;
     }
-    this.draft.update((current) => ({
-      ...current,
-      units: current.units.map((unit, index) =>
-        index === unitIndex
-          ? {
-              ...unit,
-              points: this.patchLocaleField(unit.points, pointIndex, field, value),
-            }
-          : unit,
-      ),
-    }));
+    const language = this.locale();
+    this.draft.update((current) =>
+      draftSetUnitPoint(current, unitIndex, pointIndex, field, language, value),
+    );
   }
 
   setUnitPointImage(
@@ -442,51 +715,33 @@ export class ProductEditor {
     pointIndex: number,
     file: { name: string; url: string },
   ): void {
-    this.draft.update((current) => ({
-      ...current,
-      units: current.units.map((unit, index) =>
-        index === unitIndex
-          ? {
-              ...unit,
-              points: this.mapAt(unit.points, pointIndex, (point) => this.withImage(point, file)),
-            }
-          : unit,
-      ),
-    }));
+    const language = this.locale();
+    this.draft.update((current) =>
+      draftSetUnitPointImage(current, unitIndex, pointIndex, language, file),
+    );
+  }
+
+  clearUnitPointImage(unitIndex: number, pointIndex: number): void {
+    const language = this.locale();
+    this.draft.update((current) =>
+      draftClearUnitPointImage(current, unitIndex, pointIndex, language),
+    );
   }
 
   addUnit(): void {
-    this.draft.update((current) => ({ ...current, units: [...current.units, productUnit()] }));
+    this.draft.update((current) => draftAddUnit(current));
   }
 
   removeUnit(index: number): void {
-    this.draft.update((current) => ({
-      ...current,
-      units:
-        current.units.length > 1
-          ? current.units.filter((_, item) => item !== index)
-          : current.units,
-    }));
+    this.draft.update((current) => draftRemoveUnit(current, index));
   }
 
   removeUnitPoint(unitIndex: number, pointIndex: number): void {
-    this.draft.update((current) => ({
-      ...current,
-      units: current.units.map((unit, index) =>
-        index === unitIndex && unit.points.length > 1
-          ? { ...unit, points: unit.points.filter((_, item) => item !== pointIndex) }
-          : unit,
-      ),
-    }));
+    this.draft.update((current) => draftRemoveUnitPoint(current, unitIndex, pointIndex));
   }
 
   addUnitPoint(unitIndex: number): void {
-    this.draft.update((current) => ({
-      ...current,
-      units: current.units.map((unit, index) =>
-        index === unitIndex ? { ...unit, points: [...unit.points, productPoint()] } : unit,
-      ),
-    }));
+    this.draft.update((current) => draftAddUnitPoint(current, unitIndex));
   }
 
   setFaq(index: number, field: 'question' | 'answer', event: Event): void {
@@ -494,22 +749,16 @@ export class ProductEditor {
     if (value === undefined) {
       return;
     }
-    this.draft.update((current) => ({
-      ...current,
-      faqs: this.patchLocaleField(current.faqs, index, field, value),
-    }));
+    const language = this.locale();
+    this.draft.update((current) => draftSetFaq(current, index, field, language, value));
   }
 
   addFaq(): void {
-    this.draft.update((current) => ({ ...current, faqs: [...current.faqs, productFaq()] }));
+    this.draft.update((current) => draftAddFaq(current));
   }
 
   removeFaq(index: number): void {
-    this.draft.update((current) => ({
-      ...current,
-      faqs:
-        current.faqs.length > 1 ? current.faqs.filter((_, item) => item !== index) : current.faqs,
-    }));
+    this.draft.update((current) => draftRemoveFaq(current, index));
   }
 
   setSeo(field: keyof Product['seo'], event: Event): void {
@@ -517,10 +766,17 @@ export class ProductEditor {
     if (value === undefined) {
       return;
     }
-    this.draft.update((current) => ({
-      ...current,
-      seo: { ...current.seo, [field]: this.writeLocale(current.seo[field], value) },
-    }));
+    const language = this.locale();
+    this.draft.update((current) => draftSetSeo(current, field, language, value));
+    if (field === 'slug') {
+      this.dropServerErrors('slug');
+    } else if (field === 'keywords') {
+      this.dropServerErrorPrefix(`meta_keywords.${language}`);
+    } else if (field === 'title') {
+      this.dropServerErrors(`meta_title.${language}`);
+    } else if (field === 'description') {
+      this.dropServerErrors(`meta_description.${language}`);
+    }
   }
 
   private persist(
@@ -528,16 +784,41 @@ export class ProductEditor {
     message: 'product.saved' | 'product.draftSaved',
     leave: boolean,
   ): void {
+    const evaluation = evaluateProductPersist(this.draft(), published, {
+      saving: this.saving(),
+      status: this.status(),
+    });
+    switch (evaluation.kind) {
+      case 'busy':
+        return;
+      case 'nameError':
+        this.nameError.set(true);
+        this.step.set(evaluation.step);
+        return;
+      case 'summaryInvalid':
+        if (evaluation.locale) {
+          this.useLocale(evaluation.locale);
+        }
+        this.step.set(evaluation.step);
+        return;
+      case 'repeaterInvalid':
+        if (evaluation.preferAr) {
+          this.useLocale('ar');
+        }
+        this.step.set(evaluation.step);
+        return;
+      case 'seoInvalid':
+        if (evaluation.locale) {
+          this.useLocale(evaluation.locale);
+        }
+        this.step.set(evaluation.step);
+        return;
+      case 'ready':
+        break;
+    }
 
-    if (this.saving() || this.status() !== 'ready') {
-      return;
-    }
-    const current = { ...this.draft(), published };
-    if (published && !this.namesValid()) {
-      this.nameError.set(true);
-      this.step.set(0);
-      return;
-    }
+    const previous = this.draft();
+    const current = evaluation.product;
     this.saving.set(true);
     this.api
       .save(current)
@@ -547,22 +828,102 @@ export class ProductEditor {
       )
       .subscribe({
         next: (saved) => {
+          this.objectUrls.sync(previous, saved);
           this.draft.set(saved);
           this.nameError.set(false);
+          this.serverErrors.set({});
           this.messages.add({ severity: 'success', summary: this.lang.t(message) });
           if (leave) {
-            void this.router.navigate(['/products', saved.id]);
+            void this.router.navigate(['/products']);
           }
         },
-        error: () => {
-          this.messages.add({ severity: 'error', summary: this.lang.t('common.error') });
+        error: (error: unknown) => {
+          if (isApiError(error) && error.kind === 'validation') {
+            this.applyServerErrors(error.fieldErrors);
+            if (Object.keys(error.fieldErrors).length === 0) {
+              this.messages.add({
+                severity: 'error',
+                summary: error.serverMessage ?? this.lang.t('common.error'),
+              });
+            }
+            return;
+          }
+          this.messages.add({
+            severity: 'error',
+            summary:
+              isApiError(error) && error.serverMessage
+                ? error.serverMessage
+                : this.lang.t('common.error'),
+          });
         },
       });
   }
 
-  private namesValid(): boolean {
-    const { name } = this.draft();
-    return name.ar.trim().length > 0 && name.en.trim().length > 0;
+  private applyServerErrors(fieldErrors: FieldErrors): void {
+    this.serverErrors.set(fieldErrors);
+    const focus = resolveServerErrorFocus(fieldErrors);
+    if (focus.language) {
+      this.useLocale(focus.language);
+    }
+    if (focus.stepIndex >= 0) {
+      this.step.set(focus.stepIndex);
+    }
+  }
+
+  private dropServerErrors(...paths: string[]): void {
+    if (paths.length === 0 || Object.keys(this.serverErrors()).length === 0) {
+      return;
+    }
+    this.serverErrors.update((current) => clearServerErrorPaths(current, paths));
+  }
+
+  private dropServerErrorPrefix(prefix: string): void {
+    if (Object.keys(this.serverErrors()).length === 0) {
+      return;
+    }
+    this.serverErrors.update((current) => clearServerErrorPrefix(current, prefix));
+  }
+
+  private navInput(): ProductEditorNavInput {
+    return {
+      mode: this.mode() === 'edit' ? 'edit' : 'create',
+      saving: this.saving(),
+      step: this.step(),
+      draft: this.draft(),
+    };
+  }
+
+  private applyNavDecision(decision: ProductEditorNavDecision): void {
+    switch (decision.kind) {
+      case 'noop':
+        return;
+      case 'nameError':
+        this.nameError.set(true);
+        return;
+      case 'blocked':
+        if (decision.locale) {
+          this.useLocale(decision.locale);
+        }
+        return;
+      case 'navigateList':
+        void this.router.navigate(['/products']);
+        return;
+      case 'setStep':
+        this.step.set(decision.step);
+        return;
+      case 'advance':
+        this.passed.update((current) => Math.max(current, decision.from));
+        this.step.set(decision.from + 1);
+        return;
+    }
+  }
+
+  private applyLoadState(state: ProductEditorLoadState): void {
+    this.draft.set(state.draft);
+    this.step.set(state.step);
+    this.passed.set(state.passed);
+    this.nameError.set(state.nameError);
+    this.status.set(state.status);
   }
 
   private read(event: Event): string | undefined {
@@ -571,32 +932,5 @@ export class ProductEditor {
       return target.value;
     }
     return undefined;
-  }
-
-  private writeLocale(current: LocaleText, value: string): LocaleText {
-    return { ...current, [this.locale()]: value };
-  }
-
-  private mapAt<T>(items: readonly T[], index: number, update: (item: T) => T): T[] {
-    return items.map((item, itemIndex) => (itemIndex === index ? update(item) : item));
-  }
-
-  private patchLocaleField<T extends Record<K, LocaleText>, K extends keyof T>(
-    items: readonly T[],
-    index: number,
-    field: K,
-    value: string,
-  ): T[] {
-    return this.mapAt(items, index, (item) => ({
-      ...item,
-      [field]: this.writeLocale(item[field], value),
-    }));
-  }
-
-  private withImage<T extends { imageName: string; imageUrl: string }>(
-    item: T,
-    file: { name: string; url: string },
-  ): T {
-    return { ...item, imageName: file.name, imageUrl: file.url };
   }
 }

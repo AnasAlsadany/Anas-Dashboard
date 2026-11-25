@@ -71,9 +71,7 @@ describe('permissionGuard', () => {
     data: Record<string, unknown> = {},
   ): Promise<GuardResult> {
     const route = { data } as ActivatedRouteSnapshot;
-    const result = TestBed.runInInjectionContext(() =>
-      guard(route, {} as RouterStateSnapshot),
-    );
+    const result = TestBed.runInInjectionContext(() => guard(route, {} as RouterStateSnapshot));
     return firstValueFrom(isObservable(result) ? (result as Observable<GuardResult>) : of(result));
   }
 
@@ -165,6 +163,32 @@ describe('permissionGuard', () => {
     expect(pathOf(await run(permissionGuard()))).toBe('/forbidden');
   });
 
+  it('denies when route.data.permission is an empty string', async () => {
+    auth.session.set(
+      authSession({
+        token: 't',
+        email: 'a@b.sa',
+        name: 'A',
+        profileLoaded: true,
+        permissions: ['products.view'],
+      }),
+    );
+    expect(pathOf(await run(permissionGuard(), { permission: '' }))).toBe('/forbidden');
+  });
+
+  it('denies when the factory is called with an empty permission string', async () => {
+    auth.session.set(
+      authSession({
+        token: 't',
+        email: 'a@b.sa',
+        name: 'A',
+        profileLoaded: true,
+        permissions: ['products.view'],
+      }),
+    );
+    expect(pathOf(await run(permissionGuard('')))).toBe('/forbidden');
+  });
+
   it('waits for ensureSession so unloaded permissions are not treated as empty grants', async () => {
     sessionStorage.setItem(
       'codetech.session',
@@ -250,8 +274,8 @@ describe('permissionGuard', () => {
         permissions: ['products.view'],
       }),
     );
-    expect(
-      pathOf(await run(permissionGuard('users.view'), { permission: 'products.view' })),
-    ).toBe('/forbidden');
+    expect(pathOf(await run(permissionGuard('users.view'), { permission: 'products.view' }))).toBe(
+      '/forbidden',
+    );
   });
 });

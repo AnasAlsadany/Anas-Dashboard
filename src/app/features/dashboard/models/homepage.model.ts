@@ -26,7 +26,13 @@ export interface ContentBlock {
   image: BlockImage | null;
 }
 
-export const HOME_VIDEO_MAX_BYTES = 20 * 1024 * 1024;
+export const HOME_VIDEO_MAX_BYTES = 35 * 1024 * 1024;
+
+/** Progress stream from {@link HomepageService.setVideo}. Upload 0–90, saving ~92, done 100. */
+export type VideoUploadEvent =
+  | { phase: 'upload'; progress: number }
+  | { phase: 'saving'; progress: number }
+  | { phase: 'done'; progress: number; content: HomepageContent };
 
 export interface HomepageContent {
   partners: Partner[];

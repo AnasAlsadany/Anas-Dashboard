@@ -28,19 +28,33 @@ describe('service.model', () => {
   it('builds a blank service with the expected defaults', () => {
     const service = blankService();
     expect(service.id).toBe('');
+    expect(service.code).toBe('');
     expect(service.icon).toBe('');
+    expect(service.iconUrl).toBe('');
+    expect(service.iconUuid).toBeNull();
     expect(service.published).toBe(true);
     expect(service.name).toEqual({ ar: '', en: '' });
     expect(service.description).toEqual({ ar: '', en: '' });
-    expect(service.whyImage).toEqual({ title: { ar: '', en: '' }, imageName: '', imageUrl: '' });
+    expect(service.whyImage).toEqual({
+      title: { ar: '', en: '' },
+      image: {
+        ar: { imageName: '', imageUrl: '', imageUuid: null },
+        en: { imageName: '', imageUrl: '', imageUuid: null },
+      },
+    });
     expect(service.projectIds).toEqual([]);
+    expect(service.linkedProjects).toEqual([]);
     expect(Object.keys(service).sort()).toEqual(
       [
+        'code',
         'description',
         'faqs',
         'features',
         'icon',
+        'iconUrl',
+        'iconUuid',
         'id',
+        'linkedProjects',
         'name',
         'projectIds',
         'published',
@@ -61,10 +75,21 @@ describe('service.model', () => {
     expect(service.features).toHaveLength(1);
     expect(service.sectors).toHaveLength(1);
     expect(service.faqs).toHaveLength(1);
-    expect(service.whyItems[0]).toMatchObject({ title: { ar: '', en: '' }, imageUrl: '' });
+    expect(service.whyItems[0]).toMatchObject({
+      title: { ar: '', en: '' },
+      image: { ar: { imageUrl: '' }, en: { imageUrl: '' } },
+    });
     expect(service.whyItems[0]).not.toHaveProperty('body');
-    expect(service.solutions[0]).toMatchObject({ body: { ar: '', en: '' }, imageUrl: '' });
-    expect(service.sectors[0]).toMatchObject({ imageName: '', imageUrl: '' });
+    expect(service.solutions[0]).toMatchObject({
+      body: { ar: '', en: '' },
+      image: { ar: { imageUrl: '' }, en: { imageUrl: '' } },
+    });
+    expect(service.sectors[0]).toMatchObject({
+      image: {
+        ar: { imageName: '', imageUrl: '', imageUuid: null },
+        en: { imageName: '', imageUrl: '', imageUuid: null },
+      },
+    });
     expect(service.faqs[0]).toMatchObject({ question: { ar: '', en: '' } });
   });
 

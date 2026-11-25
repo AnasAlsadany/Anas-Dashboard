@@ -3,6 +3,7 @@ import type { en } from './en';
 export const ar: { [K in keyof typeof en]: string } = {
   'auth.loginTitle': 'تسجيل الدخول',
   'auth.email': 'البريد الإلكتروني',
+  'auth.emailPlaceholder': 'ادخل البريد الإلكتروني',
   'auth.password': 'كلمة المرور',
   'auth.passwordPlaceholder': 'ادخل كلمة المرور',
   'auth.remember': 'تذكرني',
@@ -15,8 +16,8 @@ export const ar: { [K in keyof typeof en]: string } = {
   'auth.passwordRequired': 'كلمة المرور مطلوبة',
   'auth.passwordShort': 'كلمة المرور قصيرة',
   'auth.forgotTitle': 'هل نسيت كلمة المرور؟',
-  'auth.forgotHint': 'أدخل بريدك الإلكتروني وسنرسل لك رمز التحقق.',
-  'auth.forgotSent': 'إذا كان البريد مسجلاً لدينا، فستصلك رسالة برمز التحقق.',
+  'auth.forgotHint': 'أدخل بريدك وسنرسل طلب استعادة كلمة المرور.',
+  'auth.forgotSent': 'تم إرسال طلب الاستعادة لهذا البريد.',
   'auth.send': 'إرسال',
   'auth.verifyTitle': 'رمز التحقق',
   'auth.verifyLabel': 'رمز التحقق',

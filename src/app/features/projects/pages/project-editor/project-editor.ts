@@ -14,43 +14,107 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { MessageService } from 'primeng/api';
 import { catchError, finalize, map, of, switchMap } from 'rxjs';
 
+import { isApiError, loadFailureStatus, type FieldErrors } from '../../../../core/http/api-error';
 import type { AppLanguage } from '../../../../core/i18n/translations';
 import { LanguageService } from '../../../../core/services/language.service';
+import { NetworkStatusService } from '../../../../core/services/network-status.service';
 import {
   EditorShell,
   type EditorShellLabels,
 } from '../../../../shared/components/editor-shell/editor-shell';
+import { ObjectUrls } from '../../../../shared/components/product-upload/object-urls';
 import {
-  PROJECT_STEPS,
+  PROJECT_META_KEYWORD_MAX,
+  PROJECT_SEO_DESCRIPTION_MAX,
+  PROJECT_SUMMARY_MAX,
+} from '../../constants/project-limits';
+import { PROJECT_STEPS } from '../../constants/project-steps';
+import {
   blankProject,
-  projectGalleryImage,
-  projectIdentityButton,
-  projectMedia,
-  projectPoint,
   readLocale,
   type LocaleText,
   type Project,
 } from '../../models/project.model';
-import { ObjectUrls } from '../../../../shared/components/product-upload/object-urls';
 import { ProjectsService } from '../../services/projects.service';
 import {
-  AboutStep,
+  draftAddGallery,
+  draftAddIdentityButton,
+  draftAddMedia,
+  draftAddPoint,
+  draftClearCover,
+  draftClearGalleryImage,
+  draftClearIdentityButtonImage,
+  draftClearMediaImage,
+  draftClearPointImage,
+  draftClearSolutionsImage,
+  draftRemoveGallery,
+  draftRemoveIdentityButton,
+  draftRemoveMedia,
+  draftRemovePoint,
+  draftSetCover,
+  draftSetCoverText,
+  draftSetGalleryImage,
+  draftSetIdentityButtonImage,
+  draftSetIdentityButtonText,
+  draftSetLocaleField,
+  draftSetMediaImage,
+  draftSetPointField,
+  draftSetPointImage,
+  draftSetSeo,
+  draftSetSolutionsImage,
+  draftSetSolutionsImageText,
+  type ProjectMediaList,
+  type ProjectPointList,
+} from '../../utils/project-draft';
+import {
+  clearServerErrorPaths,
+  clearServerErrorPrefix,
+  firstFieldErrorMessage,
+  identityBodyErrorMessage,
+  identityTitleErrorMessage,
+  keywordsErrorMessage,
+  nameErrorMessage,
+  pointTitleBodyErrorMessage,
+  slugErrorMessage,
+  summaryErrorMessage,
+} from '../../utils/project-errors';
+import {
+  isValidMetaKeywords,
+  isValidProjectSlug,
+  isValidProjectSummary,
+  longestProjectKeywordLength,
+} from '../../utils/project-field-rules';
+import {
+  createModeEditorState,
+  editLoadSuccessState,
+  type ProjectEditorLoadState,
+} from '../../utils/project-editor-load';
+import {
+  decideNextStep,
+  decidePreviousStep,
+  decideSelectStep,
+  type ProjectEditorNavDecision,
+  type ProjectEditorNavInput,
+} from '../../utils/project-editor-navigation';
+import {
+  evaluateProjectPersist,
+  resolveServerErrorFocus,
+} from '../../utils/project-editor-persist';
+import {
   ChallengesStep,
   FeaturesStep,
   IdentityStep,
+  InfoStep,
   ResultsStep,
   SeoStep,
   SolutionsStep,
 } from './steps/project-steps';
 
-type PointList = 'categories' | 'aboutCards' | 'challenges' | 'solutions' | 'features' | 'results';
-type MediaList = 'tools';
-
 @Component({
   selector: 'app-project-editor',
   imports: [
     EditorShell,
-    AboutStep,
+    InfoStep,
     ChallengesStep,
     SolutionsStep,
     FeaturesStep,
@@ -68,6 +132,7 @@ export class ProjectEditor {
   private readonly route = inject(ActivatedRoute);
   private readonly messages = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly network = inject(NetworkStatusService);
   readonly lang = inject(LanguageService);
 
   readonly id = input('');
@@ -76,11 +141,27 @@ export class ProjectEditor {
   readonly step = signal(0);
   readonly passed = signal(-1);
   readonly draft = signal<Project>(blankProject());
-  readonly status = signal<'loading' | 'ready' | 'missing' | 'error'>(
+  readonly status = signal<'loading' | 'ready' | 'missing' | 'error' | 'offline'>(
     this.route.snapshot.data['mode'] === 'edit' ? 'loading' : 'ready',
   );
   readonly saving = signal(false);
   readonly nameError = signal(false);
+  readonly summaryMax = PROJECT_SUMMARY_MAX;
+  readonly keywordsMax = PROJECT_META_KEYWORD_MAX;
+  readonly descriptionMax = PROJECT_SEO_DESCRIPTION_MAX;
+  readonly slugInvalid = computed(
+    () => !isValidProjectSlug(readLocale(this.draft().seo.slug, this.locale())),
+  );
+  readonly summaryInvalid = computed(
+    () => !isValidProjectSummary(readLocale(this.draft().summary, this.locale())),
+  );
+  readonly keywordsLongest = computed(() =>
+    longestProjectKeywordLength(readLocale(this.draft().seo.keywords, this.locale())),
+  );
+  readonly keywordsInvalid = computed(
+    () => !isValidMetaKeywords(readLocale(this.draft().seo.keywords, this.locale())),
+  );
+  readonly serverErrors = signal<FieldErrors>({});
   private readonly reload = signal(0);
 
   readonly mode = toSignal(
@@ -114,7 +195,6 @@ export class ProjectEditor {
   );
 
   constructor() {
-
     this.destroyRef.onDestroy(() => this.objectUrls.abandon(this.draft()));
 
     effect(() => {
@@ -123,11 +203,7 @@ export class ProjectEditor {
         if (editing) {
           return;
         }
-        this.status.set('ready');
-        this.draft.set(blankProject());
-        this.step.set(0);
-        this.passed.set(-1);
-        this.nameError.set(false);
+        this.applyLoadState(createModeEditorState());
       });
     });
 
@@ -140,7 +216,7 @@ export class ProjectEditor {
           this.status.set('loading');
           return this.api.get(request.id).pipe(
             map((project) => ({ failed: false as const, project })),
-            catchError(() => of({ failed: true as const, project: null })),
+            catchError((error: unknown) => of({ failed: true as const, project: null, error })),
           );
         }),
         takeUntilDestroyed(),
@@ -150,18 +226,14 @@ export class ProjectEditor {
           return;
         }
         if (result.failed) {
-          this.status.set('error');
+          this.status.set(loadFailureStatus(result.error, this.network.online()));
           return;
         }
         if (!result.project) {
           this.status.set('missing');
           return;
         }
-        this.draft.set(result.project);
-        this.step.set(0);
-        this.passed.set(-1);
-        this.nameError.set(false);
-        this.status.set('ready');
+        this.applyLoadState(editLoadSuccessState(result.project));
       });
   }
 
@@ -184,34 +256,15 @@ export class ProjectEditor {
   }
 
   select(index: number | undefined): void {
-    if (this.saving() || index === undefined || (this.mode() === 'create' && index > this.step())) {
-      return;
-    }
-    this.step.set(index);
+    this.applyNavDecision(decideSelectStep(this.navInput(), index));
   }
 
   next(): void {
-    if (this.saving() || this.lastStep()) {
-      return;
-    }
-    if (this.mode() === 'create' && this.step() === 0 && !this.namesValid()) {
-      this.nameError.set(true);
-      return;
-    }
-    const leaving = this.step();
-    this.passed.update((current) => Math.max(current, leaving));
-    this.step.set(leaving + 1);
+    this.applyNavDecision(decideNextStep(this.navInput()));
   }
 
   previous(): void {
-    if (this.saving()) {
-      return;
-    }
-    if (this.step() === 0) {
-      void this.router.navigate(['/projects']);
-      return;
-    }
-    this.step.update((current) => current - 1);
+    this.applyNavDecision(decidePreviousStep(this.navInput()));
   }
 
   saveDraft(): void {
@@ -230,127 +283,182 @@ export class ProjectEditor {
     this.persist(published, published ? 'project.saved' : 'project.draftSaved', false);
   }
 
+  nameErrorText(): string {
+    return nameErrorMessage(this.nameError(), this.locale(), this.serverErrors(), (key) =>
+      this.copy(key),
+    );
+  }
+
+  summaryErrorText(): string {
+    return summaryErrorMessage(this.summaryInvalid(), this.locale(), this.serverErrors(), (key) =>
+      this.copy(key),
+    );
+  }
+
+  slugErrorText(): string {
+    return slugErrorMessage(this.slugInvalid(), this.serverErrors(), (key) => this.copy(key));
+  }
+
+  keywordsErrorText(): string {
+    return keywordsErrorMessage(this.keywordsInvalid(), this.locale(), this.serverErrors(), (key) =>
+      this.copy(key),
+    );
+  }
+
+  categoryTitleError(index: number): string {
+    return this.pointError('categories', index, 'title');
+  }
+
+  categoryBodyError(index: number): string {
+    return this.pointError('categories', index, 'body');
+  }
+
+  aboutTitleError(index: number): string {
+    return this.pointError('aboutCards', index, 'title');
+  }
+
+  aboutBodyError(index: number): string {
+    return this.pointError('aboutCards', index, 'body');
+  }
+
+  challengeTitleError(index: number): string {
+    return this.pointError('challenges', index, 'title');
+  }
+
+  challengeBodyError(index: number): string {
+    return this.pointError('challenges', index, 'body');
+  }
+
+  solutionTitleError(index: number): string {
+    return this.pointError('solutions', index, 'title');
+  }
+
+  solutionBodyError(index: number): string {
+    return this.pointError('solutions', index, 'body');
+  }
+
+  featureTitleError(index: number): string {
+    return this.pointError('features', index, 'title');
+  }
+
+  featureBodyError(index: number): string {
+    return this.pointError('features', index, 'body');
+  }
+
+  resultTitleError(index: number): string {
+    return this.pointError('results', index, 'title');
+  }
+
+  resultBodyError(index: number): string {
+    return this.pointError('results', index, 'body');
+  }
+
+  identityTitleError(index: number): string {
+    return identityTitleErrorMessage(
+      this.draft(),
+      index,
+      this.locale(),
+      this.serverErrors(),
+      (key) => this.copy(key),
+    );
+  }
+
+  identityBodyError(index: number): string {
+    return identityBodyErrorMessage(
+      this.draft(),
+      index,
+      this.locale(),
+      this.serverErrors(),
+      (key) => this.copy(key),
+    );
+  }
+
   setField(key: 'name' | 'summary', event: Event): void {
     const value = this.read(event);
     if (value === undefined) {
       return;
     }
-    this.draft.update((current) => ({
-      ...current,
-      [key]: this.writeLocale(current[key], value),
-    }));
+    const language = this.locale();
+    this.draft.update((current) => draftSetLocaleField(current, key, language, value));
     if (key === 'name') {
       this.nameError.set(false);
+      this.dropServerErrors(`title.${language}`);
+    }
+    if (key === 'summary') {
+      this.dropServerErrors(`description.${language}`);
     }
   }
 
-  setPoint(list: PointList, index: number, field: 'title' | 'body', event: Event): void {
+  setPoint(list: ProjectPointList, index: number, field: 'title' | 'body', event: Event): void {
     const value = this.read(event);
     if (value === undefined) {
       return;
     }
-    this.draft.update((current) => ({
-      ...current,
-      [list]: this.patchLocaleField(current[list], index, field, value),
-    }));
+    const language = this.locale();
+    this.draft.update((current) =>
+      draftSetPointField(current, list, index, field, language, value),
+    );
+    const apiList =
+      list === 'categories' ? 'tags' : list === 'aboutCards' ? 'overview_cards' : list;
+    const apiField =
+      field === 'title' ? 'title' : list === 'results' ? 'value' : 'short_description';
+    this.dropServerErrors(`${apiList}.${index}.${apiField}.${language}`);
   }
 
-  addPoint(list: PointList): void {
-    this.draft.update((current) => ({ ...current, [list]: [...current[list], projectPoint()] }));
+  addPoint(list: ProjectPointList): void {
+    this.draft.update((current) => draftAddPoint(current, list));
   }
 
-  removePoint(list: PointList, index: number): void {
-    this.draft.update((current) => ({
-      ...current,
-      [list]:
-        current[list].length > 1
-          ? current[list].filter((_, item) => item !== index)
-          : current[list],
-    }));
+  removePoint(list: ProjectPointList, index: number): void {
+    this.draft.update((current) => draftRemovePoint(current, list, index));
   }
 
-  setPointImage(list: PointList, index: number, file: { name: string; url: string }): void {
-    this.draft.update((current) => ({
-      ...current,
-      [list]: this.mapAt(current[list], index, (item) => this.withImage(item, file)),
-    }));
+  setPointImage(list: ProjectPointList, index: number, file: { name: string; url: string }): void {
+    const language = this.locale();
+    this.draft.update((current) => draftSetPointImage(current, list, index, language, file));
   }
 
-  setMediaImage(list: MediaList, index: number, file: { name: string; url: string }): void {
-    this.draft.update((current) => ({
-      ...current,
-      [list]: this.mapAt(current[list], index, (item) => this.withImage(item, file)),
-    }));
+  setMediaImage(list: ProjectMediaList, index: number, file: { name: string; url: string }): void {
+    const language = this.locale();
+    this.draft.update((current) => draftSetMediaImage(current, list, index, language, file));
   }
 
-  addMedia(list: MediaList): void {
-    this.draft.update((current) => ({ ...current, [list]: [...current[list], projectMedia()] }));
+  addMedia(list: ProjectMediaList): void {
+    this.draft.update((current) => draftAddMedia(current, list));
   }
 
-  removeMedia(list: MediaList, index: number): void {
-    this.draft.update((current) => ({
-      ...current,
-      [list]:
-        current[list].length > 1
-          ? current[list].filter((_, item) => item !== index)
-          : current[list],
-    }));
+  removeMedia(list: ProjectMediaList, index: number): void {
+    this.draft.update((current) => draftRemoveMedia(current, list, index));
   }
 
   setCover(kind: 'cover' | 'thumb', file: { name: string; url: string }): void {
-    this.draft.update((current) =>
-      kind === 'cover'
-        ? { ...current, coverName: file.name, coverUrl: file.url }
-        : { ...current, thumbName: file.name, thumbUrl: file.url },
-    );
+    const language = this.locale();
+    this.draft.update((current) => draftSetCover(current, kind, language, file));
   }
 
   clearCover(kind: 'cover' | 'thumb'): void {
-    this.draft.update((current) =>
-      kind === 'cover'
-        ? { ...current, coverName: '', coverUrl: '' }
-        : { ...current, thumbName: '', thumbUrl: '' },
-    );
+    const language = this.locale();
+    this.draft.update((current) => draftClearCover(current, kind, language));
   }
 
-  clearPointImage(list: PointList, index: number): void {
-    this.draft.update((current) => ({
-      ...current,
-      [list]: this.mapAt(current[list], index, (item) => ({
-        ...item,
-        imageName: '',
-        imageUrl: '',
-      })),
-    }));
+  clearPointImage(list: ProjectPointList, index: number): void {
+    const language = this.locale();
+    this.draft.update((current) => draftClearPointImage(current, list, index, language));
   }
 
-  clearMediaImage(list: MediaList, index: number): void {
-    this.draft.update((current) => ({
-      ...current,
-      [list]: this.mapAt(current[list], index, (item) => ({
-        ...item,
-        imageName: '',
-        imageUrl: '',
-      })),
-    }));
+  clearMediaImage(list: ProjectMediaList, index: number): void {
+    const language = this.locale();
+    this.draft.update((current) => draftClearMediaImage(current, list, index, language));
   }
 
   clearSolutionsImage(): void {
-    this.draft.update((current) => ({
-      ...current,
-      solutionsImage: { ...current.solutionsImage, imageName: '', imageUrl: '' },
-    }));
+    const language = this.locale();
+    this.draft.update((current) => draftClearSolutionsImage(current, language));
   }
 
   clearGalleryImage(index: number): void {
-    this.draft.update((current) => ({
-      ...current,
-      gallery: this.mapAt(current.gallery, index, (item) => ({
-        ...item,
-        imageName: '',
-        imageUrl: '',
-      })),
-    }));
+    const language = this.locale();
+    this.draft.update((current) => draftClearGalleryImage(current, index, language));
   }
 
   setCoverText(key: 'coverTitle' | 'coverAlt' | 'thumbTitle' | 'thumbAlt', event: Event): void {
@@ -358,17 +466,22 @@ export class ProjectEditor {
     if (value === undefined) {
       return;
     }
-    this.draft.update((current) => ({
-      ...current,
-      [key]: this.writeLocale(current[key], value),
-    }));
+    const language = this.locale();
+    this.draft.update((current) => draftSetCoverText(current, key, language, value));
+    const path =
+      key === 'coverTitle'
+        ? `cover_title.${language}`
+        : key === 'coverAlt'
+          ? `cover_alt.${language}`
+          : key === 'thumbTitle'
+            ? `thumbnail_title.${language}`
+            : `thumbnail_alt.${language}`;
+    this.dropServerErrors(path);
   }
 
   setSolutionsImage(file: { name: string; url: string }): void {
-    this.draft.update((current) => ({
-      ...current,
-      solutionsImage: this.withImage(current.solutionsImage, file),
-    }));
+    const language = this.locale();
+    this.draft.update((current) => draftSetSolutionsImage(current, language, file));
   }
 
   setSolutionsImageText(field: 'title' | 'body', event: Event): void {
@@ -376,37 +489,24 @@ export class ProjectEditor {
     if (value === undefined) {
       return;
     }
-    this.draft.update((current) => ({
-      ...current,
-      solutionsImage: {
-        ...current.solutionsImage,
-        [field]: this.writeLocale(current.solutionsImage[field], value),
-      },
-    }));
+    const language = this.locale();
+    this.draft.update((current) => draftSetSolutionsImageText(current, field, language, value));
+    const path =
+      field === 'title' ? `solutions_image_title.${language}` : `solutions_image_alt.${language}`;
+    this.dropServerErrors(path);
   }
 
   setGalleryImage(index: number, file: { name: string; url: string }): void {
-    this.draft.update((current) => ({
-      ...current,
-      gallery: this.mapAt(current.gallery, index, (item) => this.withImage(item, file)),
-    }));
+    const language = this.locale();
+    this.draft.update((current) => draftSetGalleryImage(current, index, language, file));
   }
 
   addGallery(): void {
-    this.draft.update((current) => ({
-      ...current,
-      gallery: [...current.gallery, projectGalleryImage()],
-    }));
+    this.draft.update((current) => draftAddGallery(current));
   }
 
   removeGallery(index: number): void {
-    this.draft.update((current) => ({
-      ...current,
-      gallery:
-        current.gallery.length > 1
-          ? current.gallery.filter((_, item) => item !== index)
-          : current.gallery,
-    }));
+    this.draft.update((current) => draftRemoveGallery(current, index));
   }
 
   identityButtonLabel(index: number): string {
@@ -422,27 +522,20 @@ export class ProjectEditor {
     if (value === undefined) {
       return;
     }
-    this.draft.update((current) => ({
-      ...current,
-      identityButtons: this.patchLocaleField(current.identityButtons, index, field, value),
-    }));
+    const language = this.locale();
+    this.draft.update((current) =>
+      draftSetIdentityButtonText(current, index, field, language, value),
+    );
+    const apiField = field === 'title' ? 'title' : 'short_description';
+    this.dropServerErrors(`identity_items.${index}.${apiField}.${language}`);
   }
 
   addIdentityButton(): void {
-    this.draft.update((current) => ({
-      ...current,
-      identityButtons: [...current.identityButtons, projectIdentityButton()],
-    }));
+    this.draft.update((current) => draftAddIdentityButton(current));
   }
 
   removeIdentityButton(index: number): void {
-    this.draft.update((current) => ({
-      ...current,
-      identityButtons:
-        current.identityButtons.length > 1
-          ? current.identityButtons.filter((_, item) => item !== index)
-          : current.identityButtons,
-    }));
+    this.draft.update((current) => draftRemoveIdentityButton(current, index));
   }
 
   setIdentityButtonImage(
@@ -450,27 +543,17 @@ export class ProjectEditor {
     imageIndex: number,
     file: { name: string; url: string },
   ): void {
-    this.draft.update((current) => ({
-      ...current,
-      identityButtons: this.mapAt(current.identityButtons, buttonIndex, (button) => ({
-        ...button,
-        images: this.mapAt(button.images, imageIndex, (image) => this.withImage(image, file)),
-      })),
-    }));
+    const language = this.locale();
+    this.draft.update((current) =>
+      draftSetIdentityButtonImage(current, buttonIndex, imageIndex, language, file),
+    );
   }
 
   clearIdentityButtonImage(buttonIndex: number, imageIndex: number): void {
-    this.draft.update((current) => ({
-      ...current,
-      identityButtons: this.mapAt(current.identityButtons, buttonIndex, (button) => ({
-        ...button,
-        images: this.mapAt(button.images, imageIndex, (image) => ({
-          ...image,
-          imageName: '',
-          imageUrl: '',
-        })),
-      })),
-    }));
+    const language = this.locale();
+    this.draft.update((current) =>
+      draftClearIdentityButtonImage(current, buttonIndex, imageIndex, language),
+    );
   }
 
   setSeo(field: keyof Project['seo'], event: Event): void {
@@ -478,10 +561,33 @@ export class ProjectEditor {
     if (value === undefined) {
       return;
     }
-    this.draft.update((current) => ({
-      ...current,
-      seo: { ...current.seo, [field]: this.writeLocale(current.seo[field], value) },
-    }));
+    const language = this.locale();
+    this.draft.update((current) => draftSetSeo(current, field, language, value));
+    if (field === 'slug') {
+      this.dropServerErrors('slug');
+    } else if (field === 'keywords') {
+      this.dropServerErrorPrefix(`meta_keywords.${language}`);
+    } else if (field === 'title') {
+      this.dropServerErrors(`meta_title.${language}`);
+    } else if (field === 'description') {
+      this.dropServerErrors(`meta_description.${language}`);
+    }
+  }
+
+  private pointError(
+    list: 'categories' | 'aboutCards' | 'challenges' | 'solutions' | 'features' | 'results',
+    index: number,
+    field: 'title' | 'body',
+  ): string {
+    return pointTitleBodyErrorMessage(
+      this.draft(),
+      list,
+      index,
+      field,
+      this.locale(),
+      this.serverErrors(),
+      (key) => this.copy(key),
+    );
   }
 
   private persist(
@@ -489,16 +595,41 @@ export class ProjectEditor {
     message: 'project.saved' | 'project.draftSaved',
     leave: boolean,
   ): void {
+    const evaluation = evaluateProjectPersist(this.draft(), published, {
+      saving: this.saving(),
+      status: this.status(),
+    });
+    switch (evaluation.kind) {
+      case 'busy':
+        return;
+      case 'nameError':
+        this.nameError.set(true);
+        this.step.set(evaluation.step);
+        return;
+      case 'summaryInvalid':
+        if (evaluation.locale) {
+          this.useLocale(evaluation.locale);
+        }
+        this.step.set(evaluation.step);
+        return;
+      case 'repeaterInvalid':
+        if (evaluation.preferAr) {
+          this.useLocale('ar');
+        }
+        this.step.set(evaluation.step);
+        return;
+      case 'seoInvalid':
+        if (evaluation.locale) {
+          this.useLocale(evaluation.locale);
+        }
+        this.step.set(evaluation.step);
+        return;
+      case 'ready':
+        break;
+    }
 
-    if (this.saving() || this.status() !== 'ready') {
-      return;
-    }
-    const current = { ...this.draft(), published };
-    if (published && !this.namesValid()) {
-      this.nameError.set(true);
-      this.step.set(0);
-      return;
-    }
+    const previous = this.draft();
+    const current = evaluation.project;
     this.saving.set(true);
     this.api
       .save(current)
@@ -508,22 +639,104 @@ export class ProjectEditor {
       )
       .subscribe({
         next: (saved) => {
+          this.objectUrls.sync(previous, saved);
           this.draft.set(saved);
           this.nameError.set(false);
+          this.serverErrors.set({});
           this.messages.add({ severity: 'success', summary: this.lang.t(message) });
           if (leave) {
-            void this.router.navigate(['/projects', saved.id]);
+            void this.router.navigate(['/projects']);
           }
         },
-        error: () => {
-          this.messages.add({ severity: 'error', summary: this.lang.t('common.error') });
+        error: (error: unknown) => {
+          if (isApiError(error) && error.kind === 'validation') {
+            this.applyServerErrors(error.fieldErrors);
+            this.messages.add({
+              severity: 'error',
+              summary:
+                firstFieldErrorMessage(error.fieldErrors) ||
+                error.serverMessage ||
+                this.lang.t('common.error'),
+            });
+            return;
+          }
+          this.messages.add({
+            severity: 'error',
+            summary:
+              isApiError(error) && error.serverMessage
+                ? error.serverMessage
+                : this.lang.t('common.error'),
+          });
         },
       });
   }
 
-  private namesValid(): boolean {
-    const { name } = this.draft();
-    return name.ar.trim().length > 0 && name.en.trim().length > 0;
+  private applyServerErrors(fieldErrors: FieldErrors): void {
+    this.serverErrors.set(fieldErrors);
+    const focus = resolveServerErrorFocus(fieldErrors);
+    if (focus.language) {
+      this.useLocale(focus.language);
+    }
+    if (focus.stepIndex >= 0) {
+      this.step.set(focus.stepIndex);
+    }
+  }
+
+  private dropServerErrors(...paths: string[]): void {
+    if (paths.length === 0 || Object.keys(this.serverErrors()).length === 0) {
+      return;
+    }
+    this.serverErrors.update((current) => clearServerErrorPaths(current, paths));
+  }
+
+  private dropServerErrorPrefix(prefix: string): void {
+    if (Object.keys(this.serverErrors()).length === 0) {
+      return;
+    }
+    this.serverErrors.update((current) => clearServerErrorPrefix(current, prefix));
+  }
+
+  private navInput(): ProjectEditorNavInput {
+    return {
+      mode: this.mode() === 'edit' ? 'edit' : 'create',
+      saving: this.saving(),
+      step: this.step(),
+      draft: this.draft(),
+    };
+  }
+
+  private applyNavDecision(decision: ProjectEditorNavDecision): void {
+    switch (decision.kind) {
+      case 'noop':
+        return;
+      case 'nameError':
+        this.nameError.set(true);
+        return;
+      case 'blocked':
+        if (decision.locale) {
+          this.useLocale(decision.locale);
+        }
+        return;
+      case 'navigateList':
+        void this.router.navigate(['/projects']);
+        return;
+      case 'setStep':
+        this.step.set(decision.step);
+        return;
+      case 'advance':
+        this.passed.update((current) => Math.max(current, decision.from));
+        this.step.set(decision.from + 1);
+        return;
+    }
+  }
+
+  private applyLoadState(state: ProjectEditorLoadState): void {
+    this.draft.set(state.draft);
+    this.step.set(state.step);
+    this.passed.set(state.passed);
+    this.nameError.set(state.nameError);
+    this.serverErrors.set(state.serverErrors);
+    this.status.set(state.status);
   }
 
   private read(event: Event): string | undefined {
@@ -532,32 +745,5 @@ export class ProjectEditor {
       return target.value;
     }
     return undefined;
-  }
-
-  private writeLocale(current: LocaleText, value: string): LocaleText {
-    return { ...current, [this.locale()]: value };
-  }
-
-  private mapAt<T>(items: readonly T[], index: number, update: (item: T) => T): T[] {
-    return items.map((item, itemIndex) => (itemIndex === index ? update(item) : item));
-  }
-
-  private patchLocaleField<T extends Record<K, LocaleText>, K extends keyof T>(
-    items: readonly T[],
-    index: number,
-    field: K,
-    value: string,
-  ): T[] {
-    return this.mapAt(items, index, (item) => ({
-      ...item,
-      [field]: this.writeLocale(item[field], value),
-    }));
-  }
-
-  private withImage<T extends { imageName: string; imageUrl: string }>(
-    item: T,
-    file: { name: string; url: string },
-  ): T {
-    return { ...item, imageName: file.name, imageUrl: file.url };
   }
 }

@@ -45,17 +45,6 @@
   font-weight: 700;
 }
 
-.products-manage .products-manage__add.p-button {
-  height: 40px;
-  padding-inline: 16px;
-  border: 1px solid #e6edf5;
-  border-radius: 999px;
-  background: #fff;
-  color: #12324f;
-  font-size: 14px;
-  font-weight: 500;
-}
-
 .manage-feature-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -74,9 +63,9 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 20px;
-  min-height: 188px;
-  padding: 16px 16px 22px;
+  gap: 8px;
+  min-height: 220px;
+  padding: 16px 16px 24px;
   border: 0;
   border-radius: 16px;
   background: var(--app-surface);
@@ -89,6 +78,7 @@
   align-items: center;
   justify-content: space-between;
   min-height: 40px;
+  margin-block-end: auto;
 }
 
 .manage-feature-card__actions {
@@ -142,7 +132,7 @@
 }
 
 .manage-feature-card p {
-  margin: -12px 0 0;
+  margin: 0;
   color: #8aa0b5;
   font-size: 13px;
   line-height: 1.7;

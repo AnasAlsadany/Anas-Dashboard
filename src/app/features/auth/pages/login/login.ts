@@ -59,6 +59,8 @@ export class Login {
   readonly otpRemaining = signal(0);
   readonly successOpen = signal(false);
 
+  private resetToken: string | null = null;
+
   readonly remember = signal(false);
 
   readonly form = this.fb.nonNullable.group({
@@ -83,7 +85,6 @@ export class Login {
   );
 
   private otpTimer: ReturnType<typeof setInterval> | undefined;
-  private resetToken: string | null = null;
 
   constructor() {
     this.destroyRef.onDestroy(() => this.clearOtpTimer());
@@ -99,7 +100,6 @@ export class Login {
   }
 
   openForgot(): void {
-    this.resetToken = null;
     this.resetForm.reset({ email: this.form.controls.email.value });
     this.view.set('forgot');
   }
@@ -151,18 +151,18 @@ export class Login {
       this.resetForm.markAllAsTouched();
       return;
     }
+    this.resetToken = null;
     this.resetSubmitting.set(true);
     this.auth
       .requestPasswordReset(this.resetForm.controls.email.value)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: (response) => {
+        next: () => {
           this.resetSubmitting.set(false);
-          this.resetToken = null;
           this.otpForm.reset({ code: '' });
           this.otpInvalid.set(false);
           this.view.set('forgot-otp');
-          this.startOtpTimer(response.resend_after);
+          this.startOtpTimer(60);
         },
         error: (error: unknown) => {
           this.resetSubmitting.set(false);
@@ -182,10 +182,9 @@ export class Login {
       .verifyResetCode(this.resetForm.controls.email.value, this.otpForm.controls.code.value)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: (payload) => {
+        next: (token) => {
           this.otpSubmitting.set(false);
-          this.resetToken = payload.reset_token;
-          this.clearOtpTimer();
+          this.resetToken = token;
           this.newPasswordForm.reset({ password: '', confirmPassword: '' });
           this.view.set('forgot-reset');
         },
@@ -208,7 +207,7 @@ export class Login {
       .requestPasswordReset(this.resetForm.controls.email.value)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: (response) => this.startOtpTimer(response.resend_after),
+        next: () => this.startOtpTimer(60),
         error: (error: unknown) =>
           this.messages.add({ severity: 'error', summary: this.lang.t(failureMessageKey(error)) }),
       });
@@ -225,18 +224,13 @@ export class Login {
     }
     const token = this.resetToken;
     if (!token) {
-      this.messages.add({ severity: 'error', summary: this.lang.t('common.error') });
-      this.backToForgot();
+      this.messages.add({ severity: 'error', summary: this.lang.t('auth.unavailable') });
       return;
     }
-
     this.resetSubmitting.set(true);
+    const { password, confirmPassword } = this.newPasswordForm.getRawValue();
     this.auth
-      .resetPassword(
-        this.resetForm.controls.email.value,
-        token,
-        this.newPasswordForm.controls.password.value,
-      )
+      .resetPassword(this.resetForm.controls.email.value, token, password, confirmPassword)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {

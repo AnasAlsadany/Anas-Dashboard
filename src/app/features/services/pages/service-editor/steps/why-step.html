@@ -31,15 +31,6 @@
         (input)="editor.setField('description', $event)"
       ></textarea>
     </label>
-    <div class="field">
-      <span class="field__label">{{ editor.copy('service.icon') }}</span>
-      <app-service-icon-picker
-        [value]="editor.draft().icon"
-        [groupLabel]="editor.copy('service.iconPick')"
-        [optionLabel]="editor.copy('service.iconOption')"
-        (picked)="editor.setIcon($event)"
-      />
-    </div>
   </div>
 </section>
 
@@ -83,8 +74,8 @@
                   [locale]="editor.locale()"
                   [actions]="true"
                   [clearable]="true"
-                  [name]="item.imageName"
-                  [url]="item.imageUrl"
+                  [name]="item.image[editor.locale()].imageName"
+                  [url]="item.image[editor.locale()].imageUrl"
                   (picked)="editor.setWhyIcon(index, $event)"
                   (cleared)="editor.clearWhyIcon(index)"
                 />
@@ -113,8 +104,8 @@
             [keyPrefix]="uploadPrefix"
             [locale]="editor.locale()"
             [clearable]="true"
-            [name]="editor.draft().whyImage.imageName"
-            [url]="editor.draft().whyImage.imageUrl"
+            [name]="editor.draft().whyImage.image[editor.locale()].imageName"
+            [url]="editor.draft().whyImage.image[editor.locale()].imageUrl"
             (picked)="editor.setWhyImage($event)"
             (cleared)="editor.clearWhyImage()"
           />

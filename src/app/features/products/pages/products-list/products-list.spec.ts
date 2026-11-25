@@ -1,16 +1,16 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { MessageService } from 'primeng/api';
-import { Subject, firstValueFrom, throwError } from 'rxjs';
+import { Subject, firstValueFrom, of, throwError } from 'rxjs';
 
 import { authSession } from '../../../../core/auth/auth-session.fixture';
 import { AuthService } from '../../../../core/auth/auth.service';
 import { API_LATENCY_MS } from '../../../../core/config/latency';
 import { LanguageService } from '../../../../core/services/language.service';
-import { blankProduct, localeText, type Product } from '../../models/product.model';
-import { PRODUCTS_SEED } from '../../services/products.mock';
+import { localeText, type Product } from '../../models/product.model';
+import { PRODUCTS_SEED, ProductsMemoryService } from '../../testing/products.memory';
 import { ProductsService } from '../../services/products.service';
-import { ProductsPage } from './products-list';
+import { ProductsListPage } from './products-list';
 
 const PRODUCT_GRANTS = [
   'products.view',
@@ -19,7 +19,7 @@ const PRODUCT_GRANTS = [
   'products.delete',
 ] as const;
 
-describe('ProductsPage', () => {
+describe('ProductsListPage', () => {
   async function settle<T>(fixture: { detectChanges(): void; whenStable(): Promise<void> } & T) {
     await new Promise((resolve) => setTimeout(resolve, 20));
     await fixture.whenStable();
@@ -28,8 +28,13 @@ describe('ProductsPage', () => {
 
   async function render(prepare?: (api: ProductsService) => Promise<void>) {
     TestBed.configureTestingModule({
-      imports: [ProductsPage],
-      providers: [MessageService, { provide: API_LATENCY_MS, useValue: 0 }, provideRouter([])],
+      imports: [ProductsListPage],
+      providers: [
+        MessageService,
+        { provide: API_LATENCY_MS, useValue: 0 },
+        { provide: ProductsService, useClass: ProductsMemoryService },
+        provideRouter([]),
+      ],
     });
     localStorage.setItem('codetech.language', 'ar');
     TestBed.inject(LanguageService).set('ar');
@@ -44,13 +49,13 @@ describe('ProductsPage', () => {
     );
     const api = TestBed.inject(ProductsService);
     await prepare?.(api);
-    const fixture = TestBed.createComponent(ProductsPage);
+    const fixture = TestBed.createComponent(ProductsListPage);
     fixture.detectChanges();
     return { fixture, api, root: fixture.nativeElement as HTMLElement };
   }
 
   const cards = (root: HTMLElement) => root.querySelectorAll('.product-card');
-  const confirmOf = (fixture: { componentRef: { instance: ProductsPage } }) =>
+  const confirmOf = (fixture: { componentRef: { instance: ProductsListPage } }) =>
     fixture.componentRef.instance['confirm']();
   const deleteButtons = (root: HTMLElement) =>
     root.querySelectorAll<HTMLButtonElement>('button[aria-label="حذف المنتج"]');
@@ -81,14 +86,20 @@ describe('ProductsPage', () => {
 
   it('shows an error instead of the empty state when loading fails', async () => {
     TestBed.configureTestingModule({
-      imports: [ProductsPage],
-      providers: [MessageService, { provide: API_LATENCY_MS, useValue: 0 }, provideRouter([])],
+      imports: [ProductsListPage],
+      providers: [
+        MessageService,
+        { provide: API_LATENCY_MS, useValue: 0 },
+        { provide: ProductsService, useClass: ProductsMemoryService },
+        provideRouter([]),
+      ],
     });
     localStorage.setItem('codetech.language', 'ar');
     TestBed.inject(LanguageService).set('ar');
     const api = TestBed.inject(ProductsService);
-    vi.spyOn(api, 'list').mockReturnValue(throwError(() => new Error('offline')));
-    const fixture = TestBed.createComponent(ProductsPage);
+    vi.spyOn(api, 'listAll').mockReturnValue(throwError(() => new Error('offline')));
+    vi.spyOn(api, 'loadCatalogVisibility').mockReturnValue(throwError(() => new Error('offline')));
+    const fixture = TestBed.createComponent(ProductsListPage);
     fixture.detectChanges();
     await settle(fixture);
     const root: HTMLElement = fixture.nativeElement;
@@ -103,14 +114,24 @@ describe('ProductsPage', () => {
 
   it('retries after a load failure and shows the catalog on success', async () => {
     TestBed.configureTestingModule({
-      imports: [ProductsPage],
-      providers: [MessageService, { provide: API_LATENCY_MS, useValue: 0 }, provideRouter([])],
+      imports: [ProductsListPage],
+      providers: [
+        MessageService,
+        { provide: API_LATENCY_MS, useValue: 0 },
+        { provide: ProductsService, useClass: ProductsMemoryService },
+        provideRouter([]),
+      ],
     });
     localStorage.setItem('codetech.language', 'ar');
     TestBed.inject(LanguageService).set('ar');
     const api = TestBed.inject(ProductsService);
-    const list = vi.spyOn(api, 'list').mockReturnValueOnce(throwError(() => new Error('offline')));
-    const fixture = TestBed.createComponent(ProductsPage);
+    const list = vi
+      .spyOn(api, 'listAll')
+      .mockReturnValueOnce(throwError(() => new Error('offline')));
+    vi.spyOn(api, 'loadCatalogVisibility')
+      .mockReturnValueOnce(throwError(() => new Error('offline')))
+      .mockReturnValue(of(true));
+    const fixture = TestBed.createComponent(ProductsListPage);
     fixture.detectChanges();
     await settle(fixture);
     expect(fixture.componentInstance.status()).toBe('error');
@@ -129,14 +150,20 @@ describe('ProductsPage', () => {
 
   it('keeps the error state when retry fails again', async () => {
     TestBed.configureTestingModule({
-      imports: [ProductsPage],
-      providers: [MessageService, { provide: API_LATENCY_MS, useValue: 0 }, provideRouter([])],
+      imports: [ProductsListPage],
+      providers: [
+        MessageService,
+        { provide: API_LATENCY_MS, useValue: 0 },
+        { provide: ProductsService, useClass: ProductsMemoryService },
+        provideRouter([]),
+      ],
     });
     localStorage.setItem('codetech.language', 'ar');
     TestBed.inject(LanguageService).set('ar');
     const api = TestBed.inject(ProductsService);
-    vi.spyOn(api, 'list').mockReturnValue(throwError(() => new Error('offline')));
-    const fixture = TestBed.createComponent(ProductsPage);
+    vi.spyOn(api, 'listAll').mockReturnValue(throwError(() => new Error('offline')));
+    vi.spyOn(api, 'loadCatalogVisibility').mockReturnValue(throwError(() => new Error('offline')));
+    const fixture = TestBed.createComponent(ProductsListPage);
     fixture.detectChanges();
     await settle(fixture);
 
@@ -151,8 +178,13 @@ describe('ProductsPage', () => {
 
   it('ignores a stale list response after a newer load has started', async () => {
     TestBed.configureTestingModule({
-      imports: [ProductsPage],
-      providers: [MessageService, { provide: API_LATENCY_MS, useValue: 0 }, provideRouter([])],
+      imports: [ProductsListPage],
+      providers: [
+        MessageService,
+        { provide: API_LATENCY_MS, useValue: 0 },
+        { provide: ProductsService, useClass: ProductsMemoryService },
+        provideRouter([]),
+      ],
     });
     localStorage.setItem('codetech.language', 'ar');
     TestBed.inject(LanguageService).set('ar');
@@ -160,11 +192,12 @@ describe('ProductsPage', () => {
     const first = new Subject<Product[]>();
     const second = new Subject<Product[]>();
     let calls = 0;
-    vi.spyOn(api, 'list').mockImplementation(() => {
+    vi.spyOn(api, 'loadCatalogVisibility').mockReturnValue(of(true));
+    vi.spyOn(api, 'listAll').mockImplementation(() => {
       calls += 1;
       return calls === 1 ? first.asObservable() : second.asObservable();
     });
-    const fixture = TestBed.createComponent(ProductsPage);
+    const fixture = TestBed.createComponent(ProductsListPage);
     fixture.detectChanges();
     expect(fixture.componentInstance.status()).toBe('loading');
 
@@ -243,25 +276,45 @@ describe('ProductsPage', () => {
     expect(fixture.componentInstance.first()).toBe(0);
   });
 
+  it('hides the paginator until the list exceeds six products', async () => {
+    const { fixture, root } = await render();
+    await settle(fixture);
+    expect(cards(root)).toHaveLength(6);
+    expect(root.querySelector('app-paginator')).toBeNull();
+
+    const api = TestBed.inject(ProductsService);
+    const base = PRODUCTS_SEED[0]!;
+    await firstValueFrom(
+      api.save({
+        ...structuredClone(base),
+        id: 'extra-7',
+        name: localeText('إضافي', 'Extra'),
+      }),
+    );
+    fixture.componentInstance['source'].set(await firstValueFrom(api.list()));
+    fixture.detectChanges();
+
+    expect(cards(root)).toHaveLength(6);
+    expect(root.querySelector('app-paginator')).not.toBeNull();
+  });
+
   it('paginates long lists and steps back when the last card of a page is removed', async () => {
     const { fixture, root } = await render(async (api) => {
       const base = PRODUCTS_SEED[0]!;
-      for (let index = 0; index < 5; index += 1) {
-        await firstValueFrom(
-          api.save({
-            ...structuredClone(base),
-            id: `extra-${index}`,
-            name: localeText(`إضافي ${index}`, `Extra ${index}`),
-          }),
-        );
-      }
+      await firstValueFrom(
+        api.save({
+          ...structuredClone(base),
+          id: 'extra-0',
+          name: localeText('إضافي 0', 'Extra 0'),
+        }),
+      );
     });
     await settle(fixture);
-    expect(cards(root)).toHaveLength(10);
+    expect(cards(root)).toHaveLength(6);
     expect(root.querySelector('app-paginator')).not.toBeNull();
 
     const page = fixture.componentInstance;
-    page['page']({ first: 10, rows: 10 });
+    page['page']({ first: 6, rows: 6 });
     fixture.detectChanges();
     expect(cards(root)).toHaveLength(1);
 
@@ -270,13 +323,14 @@ describe('ProductsPage', () => {
     await settle(fixture);
 
     expect(page.first()).toBe(0);
-    expect(cards(root)).toHaveLength(10);
+    expect(cards(root)).toHaveLength(6);
+    expect(root.querySelector('app-paginator')).toBeNull();
   });
 
   it('keeps the current page when other items remain after a deletion', async () => {
     const { fixture, root } = await render(async (api) => {
       const base = PRODUCTS_SEED[0]!;
-      for (let index = 0; index < 5; index += 1) {
+      for (let index = 0; index < 2; index += 1) {
         await firstValueFrom(
           api.save({
             ...structuredClone(base),
@@ -289,21 +343,7 @@ describe('ProductsPage', () => {
     await settle(fixture);
 
     const page = fixture.componentInstance;
-    page['page']({ first: 10, rows: 10 });
-    fixture.detectChanges();
-    expect(cards(root)).toHaveLength(1);
-
-    const api = TestBed.inject(ProductsService);
-    await firstValueFrom(
-      api.save({
-        ...blankProduct(),
-        id: 'extra-tail',
-        name: localeText('ذيل', 'Tail'),
-        published: true,
-      }),
-    );
-
-    page['source'].set(await firstValueFrom(api.list()));
+    page['page']({ first: 6, rows: 6 });
     fixture.detectChanges();
     expect(cards(root)).toHaveLength(2);
 
@@ -311,7 +351,7 @@ describe('ProductsPage', () => {
     deleteButtons(root)[0]!.click();
     await settle(fixture);
 
-    expect(page.first()).toBe(10);
+    expect(page.first()).toBe(6);
     expect(cards(root)).toHaveLength(1);
   });
 
@@ -356,23 +396,20 @@ describe('ProductsPage', () => {
   });
 
   it('recovers to a valid page when the displayed list shrinks below the current offset', async () => {
-
     const { fixture, root } = await render(async (api) => {
       const base = PRODUCTS_SEED[0]!;
-      for (let index = 0; index < 5; index += 1) {
-        await firstValueFrom(
-          api.save({
-            ...structuredClone(base),
-            id: `extra-${index}`,
-            name: localeText(`إضافي ${index}`, `Extra ${index}`),
-          }),
-        );
-      }
+      await firstValueFrom(
+        api.save({
+          ...structuredClone(base),
+          id: 'extra-0',
+          name: localeText('إضافي 0', 'Extra 0'),
+        }),
+      );
     });
     await settle(fixture);
 
     const page = fixture.componentInstance;
-    page['page']({ first: 10, rows: 10 });
+    page['page']({ first: 6, rows: 6 });
     fixture.detectChanges();
     expect(cards(root)).toHaveLength(1);
 

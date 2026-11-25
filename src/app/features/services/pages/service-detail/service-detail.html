@@ -7,8 +7,12 @@
       <i class="pi" [class]="backIcon()" aria-hidden="true"></i>
       {{ lang.t('service.back') }}
     </a>
-  } @else if (status() === 'error') {
-    <app-state-view mode="error" [message]="lang.t('common.error')" (retry)="retry()" />
+  } @else if (status() === 'error' || status() === 'offline') {
+    <app-state-view
+      [mode]="status() === 'offline' ? 'offline' : 'error'"
+      [message]="lang.t('common.error')"
+      (retry)="retry()"
+    />
     <a class="detail-edit service-detail__back" routerLink="/services">
       <i class="pi" [class]="backIcon()" aria-hidden="true"></i>
       {{ lang.t('service.back') }}
@@ -77,10 +81,11 @@
                 <span class="icon-badge"><i class="pi pi-image" aria-hidden="true"></i></span>
               </header>
               @if (whyImage(); as hero) {
-                @if (hero.imageUrl && !visual(hero).icon) {
+                @let heroArt = visual(hero.image);
+                @if (heroArt.image) {
                   <img
                     class="detail-photo service-detail__photo"
-                    [src]="hero.imageUrl"
+                    [src]="heroArt.image"
                     [alt]="text(hero.title)"
                   />
                 } @else {
@@ -105,7 +110,7 @@
             @if (whyItems().length) {
               <ul class="detail-features service-detail__list">
                 @for (entry of whyItems(); track entry.id) {
-                  @let art = visual(entry);
+                  @let art = visual(entry.image);
                   <li>
                     <strong>{{ text(entry.title) }}</strong>
                     <span class="detail-features__icon" aria-hidden="true">
@@ -133,7 +138,7 @@
           @if (solutions().length) {
             <ul class="service-detail__cards">
               @for (entry of solutions(); track entry.id) {
-                @let art = visual(entry);
+                @let art = visual(entry.image);
                 <li class="service-detail__card">
                   <span class="detail-features__icon" aria-hidden="true">
                     @if (art.image) {
@@ -163,7 +168,7 @@
           @if (stages().length) {
             <ol class="service-detail__cards service-detail__stages">
               @for (entry of stages(); track entry.id; let index = $index) {
-                @let art = visual(entry);
+                @let art = visual(entry.image);
                 <li class="service-detail__card service-detail__stage">
                   <div class="service-detail__stage-copy">
                     <span class="service-detail__number" aria-hidden="true">
@@ -216,18 +221,17 @@
             <app-button
               *appHasPermission="'projects.create'"
               variant="primary"
-              [outlined]="true"
               icon="pi pi-plus"
-              styleClass="service-detail__add-project"
+              styleClass="app-add-btn"
               [label]="lang.t('project.add')"
               (clicked)="addProject()"
             />
           </header>
           @if (projectsStatus() === 'loading') {
             <app-state-view mode="loading" [message]="lang.t('common.loading')" />
-          } @else if (projectsStatus() === 'error') {
+          } @else if (projectsStatus() === 'error' || projectsStatus() === 'offline') {
             <app-state-view
-              mode="error"
+              [mode]="projectsStatus() === 'offline' ? 'offline' : 'error'"
               [message]="lang.t('service.detail.projectsError')"
               (retry)="loadProjects()"
             />
@@ -270,7 +274,7 @@
               <div class="app-sector-grid service-detail__sectors">
                 @for (sector of sectors(); track sector.id; let index = $index) {
                   <app-sector-card
-                    [imageUrl]="visual(sector).image"
+                    [imageUrl]="visual(sectorMedia(sector)).image"
                     [title]="sectorLabel(index)"
                     [editLabel]="lang.t('service.editAction')"
                     [deleteLabel]="lang.t('service.deleteAction')"

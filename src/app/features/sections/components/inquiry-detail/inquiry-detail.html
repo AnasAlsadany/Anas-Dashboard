@@ -1,7 +1,11 @@
 @if (status() === 'loading') {
   <app-state-view mode="loading" />
-} @else if (status() === 'error') {
-  <app-state-view mode="error" [message]="lang.t('common.error')" (retry)="reload()" />
+} @else if (status() === 'error' || status() === 'offline') {
+  <app-state-view
+    [mode]="status() === 'offline' ? 'offline' : 'error'"
+    [message]="lang.t('common.error')"
+    (retry)="reload()"
+  />
 } @else if (status() === 'missing' || !item()) {
   <app-state-view mode="empty" [message]="lang.t('inquiry.notFound')" />
 } @else if (item(); as inquiry) {
@@ -25,10 +29,10 @@
 
       <article class="inquiry-card inquiry-card--message">
         <header class="inquiry-card__head">
-          <h2>{{ lang.t('inquiry.messageDetails') }}</h2>
           <span class="inquiry-card__icon" aria-hidden="true"
             ><i class="pi pi-align-right"></i
           ></span>
+          <h2>{{ lang.t('inquiry.messageDetails') }}</h2>
         </header>
         <div class="inquiry-copy">
           <span class="inquiry-field__label">{{ lang.t('inquiry.body') }}</span>
@@ -46,10 +50,10 @@
       @if (inquiry.notes.length) {
         <article class="inquiry-card inquiry-card--note">
           <header class="inquiry-card__head">
-            <h2>{{ lang.t('inquiry.note') }}</h2>
             <span class="inquiry-card__icon" aria-hidden="true"
               ><i class="pi pi-align-right"></i
             ></span>
+            <h2>{{ lang.t('inquiry.note') }}</h2>
           </header>
           @for (note of inquiry.notes; track note.id) {
             <div class="inquiry-copy">
@@ -70,8 +74,8 @@
       @if (inquiry.reply; as reply) {
         <article class="inquiry-card inquiry-card--reply">
           <header class="inquiry-card__head">
-            <h2>{{ lang.t('inquiry.reply') }}</h2>
             <span class="inquiry-card__icon" aria-hidden="true"><i class="pi pi-send"></i></span>
+            <h2>{{ lang.t('inquiry.reply') }}</h2>
           </header>
           <div class="inquiry-copy">
             <ng-container

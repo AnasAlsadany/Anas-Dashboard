@@ -18,6 +18,8 @@ export const ar: { [K in keyof typeof en]: string } = {
   'settings.addRole': 'إضافة دور جديد',
   'settings.deleteRole': 'حذف الدور',
   'settings.deleteRoleMessage': 'هل تريد حذف هذا الدور؟ لا يمكن التراجع عن هذا الإجراء.',
+  'settings.deleteRoleAssigned':
+    'يبقى حساب المستخدمين المرتبطين بهذا الدور، ويفقدون الصلاحيات حتى يُسند إليهم دور آخر.',
   'settings.resource': 'العنصر',
   'settings.roleSuperAdmin': 'مدير عام',
   'settings.roleName': 'اسم الدور',
@@ -64,6 +66,8 @@ export const ar: { [K in keyof typeof en]: string } = {
   'social.platform.whatsapp': 'واتساب',
   'social.lastUpdated': 'آخر تحديث بتاريخ {date}',
   'social.loadError': 'تعذر تحميل روابط التواصل',
+  'social.siteLoadError': 'تعذر تحميل إعدادات الموقع',
+  'social.channelsLoadError': 'تعذر تحميل وسائل التواصل',
   'social.channelSaved': 'تم حفظ الوسيلة',
   'social.channelDeleted': 'تم حذف الوسيلة',
   'social.deleteChannel': 'حذف الوسيلة',

@@ -14,6 +14,7 @@ const LOGIN = apiUrl(environment.apiUrl, 'admin/auth/login');
 const FORGOT = apiUrl(environment.apiUrl, 'admin/auth/forgot-password');
 const VERIFY_CODE = apiUrl(environment.apiUrl, 'admin/auth/verify-code');
 const RESET_PASSWORD = apiUrl(environment.apiUrl, 'admin/auth/reset-password');
+const RESET_TOKEN = 'a'.repeat(64);
 
 const LOGIN_BODY = {
   data: {
@@ -23,7 +24,7 @@ const LOGIN_BODY = {
       code: 'USE-00007',
       name: 'يوسف احمد',
       username: null,
-      email: 'admin@codetech-sa.com',
+      email: 'admin@example.test',
       phone: null,
       status: 'active',
       role: { id: 1, name: 'المدير العام', is_protected: true },
@@ -77,11 +78,17 @@ describe('Login', () => {
     rendered.root.querySelector('form')?.dispatchEvent(new Event('submit'));
     if (flush === 'ok') {
       rendered.http.expectOne(LOGIN).flush(LOGIN_BODY);
+      const forgot = rendered.http.expectOne(FORGOT);
+      expect(forgot.request.method).toBe('POST');
+      expect(forgot.request.body).toEqual({ email: 'admin@example.test' });
+      forgot.flush({ message: 'ok' });
     } else if (flush === '422') {
-      rendered.http.expectOne(LOGIN).flush(
-        { message: 'كلمة المرور غير صحيحة', errors: { password: ['invalid'] } },
-        { status: 422, statusText: 'Unprocessable Entity' },
-      );
+      rendered.http
+        .expectOne(LOGIN)
+        .flush(
+          { message: 'كلمة المرور غير صحيحة', errors: { password: ['invalid'] } },
+          { status: 422, statusText: 'Unprocessable Entity' },
+        );
     }
     await new Promise((resolve) => setTimeout(resolve, 10));
     await rendered.fixture.whenStable();
@@ -107,7 +114,7 @@ describe('Login', () => {
 
   it('shows an inline credential error for a wrong password', async () => {
     const rendered = await render();
-    fill(rendered.root, '#email', 'admin@codetech-sa.com');
+    fill(rendered.root, '#email', 'admin@example.test');
     fill(rendered.root, '#password', 'not-the-password');
     await submit(rendered, '422');
 
@@ -120,7 +127,7 @@ describe('Login', () => {
 
   it('moves to the verification step after a correct password without opening a session', async () => {
     const rendered = await render();
-    fill(rendered.root, '#email', 'admin@codetech-sa.com');
+    fill(rendered.root, '#email', 'admin@example.test');
     fill(rendered.root, '#password', 'Password@123');
     await submit(rendered, 'ok');
 
@@ -129,6 +136,181 @@ describe('Login', () => {
     expect(rendered.auth.isAuthenticated()).toBe(false);
     expect(sessionStorage.getItem('codetech.session')).toBeNull();
     expect(localStorage.getItem('codetech.session')).toBeNull();
+    rendered.http.verify();
+  });
+
+  it('sends the forgot-password email and opens the verification step', async () => {
+    const rendered = await render();
+    const forgot = [...rendered.root.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('نسيت'),
+    );
+    forgot?.click();
+    rendered.fixture.detectChanges();
+    await rendered.fixture.whenStable();
+
+    fill(rendered.root, '#forgot-email', 'user@example.test');
+    rendered.root.querySelector('form')?.dispatchEvent(new Event('submit'));
+    const request = rendered.http.expectOne(FORGOT);
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual({ email: 'user@example.test' });
+    request.flush({ message: 'ok' });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await rendered.fixture.whenStable();
+    rendered.fixture.detectChanges();
+
+    expect(rendered.root.querySelector('h1')?.textContent).toContain('رمز التحقق');
+    rendered.http.verify();
+  });
+
+  it('verifies the reset code and opens the new-password step', async () => {
+    const rendered = await render();
+    const forgot = [...rendered.root.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('نسيت'),
+    );
+    forgot?.click();
+    rendered.fixture.detectChanges();
+    fill(rendered.root, '#forgot-email', 'admin@example.test');
+    rendered.root.querySelector('form')?.dispatchEvent(new Event('submit'));
+    rendered.http.expectOne(FORGOT).flush({ message: 'ok' });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await rendered.fixture.whenStable();
+    rendered.fixture.detectChanges();
+
+    rendered.fixture.componentInstance.otpForm.controls.code.setValue('0427');
+    rendered.root.querySelector('form')?.dispatchEvent(new Event('submit'));
+    const request = rendered.http.expectOne(VERIFY_CODE);
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual({ email: 'admin@example.test', code: '0427' });
+    request.flush({ data: { reset_token: RESET_TOKEN } });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await rendered.fixture.whenStable();
+    rendered.fixture.detectChanges();
+
+    expect(rendered.root.querySelector('h1')?.textContent).toContain('إعادة تعيين كلمة مرور');
+    rendered.http.verify();
+  });
+
+  it('sets the new password with the reset token', async () => {
+    const rendered = await render();
+    const toast = vi.spyOn(TestBed.inject(MessageService), 'add');
+    const forgot = [...rendered.root.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('نسيت'),
+    );
+    forgot?.click();
+    rendered.fixture.detectChanges();
+    fill(rendered.root, '#forgot-email', 'admin@example.test');
+    rendered.root.querySelector('form')?.dispatchEvent(new Event('submit'));
+    rendered.http.expectOne(FORGOT).flush({ message: 'ok' });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await rendered.fixture.whenStable();
+    rendered.fixture.detectChanges();
+
+    rendered.fixture.componentInstance.otpForm.controls.code.setValue('0427');
+    rendered.root.querySelector('form')?.dispatchEvent(new Event('submit'));
+    rendered.http.expectOne(VERIFY_CODE).flush({ data: { reset_token: RESET_TOKEN } });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await rendered.fixture.whenStable();
+    rendered.fixture.detectChanges();
+
+    rendered.fixture.componentInstance.newPasswordForm.setValue({
+      password: 'NewPassw0rd',
+      confirmPassword: 'NewPassw0rd',
+    });
+    rendered.root.querySelector('form')?.dispatchEvent(new Event('submit'));
+    const request = rendered.http.expectOne(RESET_PASSWORD);
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual({
+      email: 'admin@example.test',
+      reset_token: RESET_TOKEN,
+      password: 'NewPassw0rd',
+      password_confirmation: 'NewPassw0rd',
+    });
+    request.flush({ message: 'ok' });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await rendered.fixture.whenStable();
+    rendered.fixture.detectChanges();
+
+    expect(rendered.fixture.componentInstance.successOpen()).toBe(true);
+    expect(toast).not.toHaveBeenCalled();
+    expect(JSON.stringify(Object.entries(sessionStorage))).not.toContain('NewPassw0rd');
+    expect(JSON.stringify(Object.entries(localStorage))).not.toContain('NewPassw0rd');
+    rendered.http.verify();
+  });
+
+  it('shows the server password message when reset is rejected', async () => {
+    const rendered = await render();
+    const toast = vi.spyOn(TestBed.inject(MessageService), 'add');
+    const forgot = [...rendered.root.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('نسيت'),
+    );
+    forgot?.click();
+    rendered.fixture.detectChanges();
+    fill(rendered.root, '#forgot-email', 'admin@example.test');
+    rendered.root.querySelector('form')?.dispatchEvent(new Event('submit'));
+    rendered.http.expectOne(FORGOT).flush({ message: 'ok' });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await rendered.fixture.whenStable();
+    rendered.fixture.detectChanges();
+
+    rendered.fixture.componentInstance.otpForm.controls.code.setValue('0427');
+    rendered.root.querySelector('form')?.dispatchEvent(new Event('submit'));
+    rendered.http.expectOne(VERIFY_CODE).flush({ reset_token: RESET_TOKEN });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await rendered.fixture.whenStable();
+    rendered.fixture.detectChanges();
+
+    rendered.fixture.componentInstance.newPasswordForm.setValue({
+      password: 'NewPassw0rd',
+      confirmPassword: 'NewPassw0rd',
+    });
+    rendered.root.querySelector('form')?.dispatchEvent(new Event('submit'));
+    rendered.http.expectOne(RESET_PASSWORD).flush(
+      {
+        message: 'كلمة المرور غير صحيحة، حاول مرة اخرى',
+        errors: { password: ['كلمة المرور غير صحيحة، حاول مرة اخرى'] },
+      },
+      { status: 422, statusText: 'Unprocessable Entity' },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await rendered.fixture.whenStable();
+    rendered.fixture.detectChanges();
+
+    expect(rendered.fixture.componentInstance.successOpen()).toBe(false);
+    expect(toast).toHaveBeenCalledWith({
+      severity: 'error',
+      summary: 'كلمة المرور غير صحيحة، حاول مرة اخرى',
+    });
+    rendered.http.verify();
+  });
+
+  it('shows an inline error when the reset code is rejected', async () => {
+    const rendered = await render();
+    const forgot = [...rendered.root.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('نسيت'),
+    );
+    forgot?.click();
+    rendered.fixture.detectChanges();
+    fill(rendered.root, '#forgot-email', 'admin@example.test');
+    rendered.root.querySelector('form')?.dispatchEvent(new Event('submit'));
+    rendered.http.expectOne(FORGOT).flush({ message: 'ok' });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await rendered.fixture.whenStable();
+    rendered.fixture.detectChanges();
+
+    rendered.fixture.componentInstance.otpForm.controls.code.setValue('0000');
+    rendered.root.querySelector('form')?.dispatchEvent(new Event('submit'));
+    rendered.http
+      .expectOne(VERIFY_CODE)
+      .flush(
+        { message: 'رمز التحقق خاطئ', errors: { code: ['invalid'] } },
+        { status: 422, statusText: 'Unprocessable Entity' },
+      );
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await rendered.fixture.whenStable();
+    rendered.fixture.detectChanges();
+
+    expect(rendered.root.querySelector('#otp-error')).not.toBeNull();
+    expect(rendered.root.querySelector('#reset-password')).toBeNull();
     rendered.http.verify();
   });
 
@@ -142,89 +324,6 @@ describe('Login', () => {
     http.verify();
   });
 
-  async function openForgot(rendered: Awaited<ReturnType<typeof render>>): Promise<void> {
-    rendered.root.querySelectorAll('button').forEach((button) => {
-      if (
-        button.textContent?.includes('نسيت') ||
-        button.textContent?.toLowerCase().includes('forgot')
-      ) {
-        button.click();
-      }
-    });
-    rendered.fixture.detectChanges();
-  }
-
-  it('posts forgot-password then opens the OTP step with resend_after', async () => {
-    const rendered = await render();
-    await openForgot(rendered);
-
-    fill(rendered.root, '#forgot-email', 'anas.elsadany20@gmail.com');
-    rendered.root.querySelector('.forgot-form')?.dispatchEvent(new Event('submit'));
-    const request = rendered.http.expectOne(FORGOT);
-    expect(request.request.method).toBe('POST');
-    expect(request.request.body).toEqual({ email: 'anas.elsadany20@gmail.com' });
-    request.flush(
-      {
-        message: 'إذا كان البريد الإلكتروني مسجلاً لدينا، فستصلك رسالة برمز التحقق.',
-        resend_after: 50,
-      },
-      { status: 202, statusText: 'Accepted' },
-    );
-    await rendered.fixture.whenStable();
-    rendered.fixture.detectChanges();
-
-    expect(rendered.root.querySelector('app-auth-otp-form')).not.toBeNull();
-    expect(rendered.fixture.componentInstance.otpRemaining()).toBe(50);
-    rendered.http.verify();
-  });
-
-  it('verifies the OTP then resets the password through the API', async () => {
-    const rendered = await render();
-    await openForgot(rendered);
-
-    fill(rendered.root, '#forgot-email', 'anas.elsadany20@gmail.com');
-    rendered.root.querySelector('.forgot-form')?.dispatchEvent(new Event('submit'));
-    rendered.http.expectOne(FORGOT).flush(
-      { message: 'ok', resend_after: 50 },
-      { status: 202, statusText: 'Accepted' },
-    );
-    await rendered.fixture.whenStable();
-    rendered.fixture.detectChanges();
-
-    rendered.fixture.componentInstance.otpForm.setValue({ code: '0427' });
-    rendered.root.querySelector('app-auth-otp-form form')?.dispatchEvent(new Event('submit'));
-    const verify = rendered.http.expectOne(VERIFY_CODE);
-    expect(verify.request.body).toEqual({
-      email: 'anas.elsadany20@gmail.com',
-      code: '0427',
-    });
-    verify.flush({
-      data: {
-        reset_token: 'reset-token-abc',
-        expires_at: '2026-11-02T10:15:00.000000Z',
-      },
-    });
-    await rendered.fixture.whenStable();
-    rendered.fixture.detectChanges();
-    expect(rendered.root.querySelector('app-login-reset-form')).not.toBeNull();
-
-    fill(rendered.root, '#reset-password', 'NewPassw0rd');
-    fill(rendered.root, '#reset-confirm', 'NewPassw0rd');
-    rendered.root.querySelector('app-login-reset-form form')?.dispatchEvent(new Event('submit'));
-    const reset = rendered.http.expectOne(RESET_PASSWORD);
-    expect(reset.request.body).toEqual({
-      email: 'anas.elsadany20@gmail.com',
-      reset_token: 'reset-token-abc',
-      password: 'NewPassw0rd',
-    });
-    reset.flush({ message: 'تم إعادة تعيين كلمة المرور بنجاح' });
-    await rendered.fixture.whenStable();
-    rendered.fixture.detectChanges();
-
-    expect(rendered.fixture.componentInstance.successOpen()).toBe(true);
-    rendered.http.verify();
-  });
-
   it('sends remember=true and still keeps the token pending until OTP', async () => {
     const rendered = await render();
     const checkbox = input(rendered.root, '#remember');
@@ -232,16 +331,19 @@ describe('Login', () => {
     rendered.fixture.detectChanges();
     expect(checkbox.checked).toBe(true);
 
-    fill(rendered.root, '#email', 'admin@codetech-sa.com');
+    fill(rendered.root, '#email', 'admin@example.test');
     fill(rendered.root, '#password', 'Password@123');
     rendered.root.querySelector('form')?.dispatchEvent(new Event('submit'));
     const request = rendered.http.expectOne(LOGIN);
     expect(request.request.body).toEqual({
-      email: 'admin@codetech-sa.com',
+      email: 'admin@example.test',
       password: 'Password@123',
       remember: true,
     });
     request.flush(LOGIN_BODY);
+    const forgot = rendered.http.expectOne(FORGOT);
+    expect(forgot.request.body).toEqual({ email: 'admin@example.test' });
+    forgot.flush({ message: 'ok' });
     await new Promise((resolve) => setTimeout(resolve, 10));
     await rendered.fixture.whenStable();
 

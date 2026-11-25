@@ -14,7 +14,9 @@ import { MessageService } from 'primeng/api';
 import { type PaginatorState } from 'primeng/paginator';
 
 import { AuthService } from '../../../../core/auth/auth.service';
+import { loadFailureStatus } from '../../../../core/http/api-error';
 import { LanguageService } from '../../../../core/services/language.service';
+import { NetworkStatusService } from '../../../../core/services/network-status.service';
 import { AppButton } from '../../../../shared/components/app-button/app-button';
 import { AppPaginator } from '../../../../shared/components/app-paginator/app-paginator';
 import { ConfirmDialog } from '../../../../shared/components/confirm-dialog/confirm-dialog';
@@ -22,10 +24,9 @@ import { PageHeader } from '../../../../shared/components/page-header/page-heade
 import { StateView } from '../../../../shared/components/state-view/state-view';
 import { HasPermissionDirective } from '../../../../shared/directives/has-permission.directive';
 import { ServiceCard } from '../../components/service-card/service-card';
+import { SERVICE_LIST_PAGE_SIZE, type ServiceLoadState } from '../../constants/service.constants';
 import { readLocale, type Service } from '../../models/service.model';
 import { ServicesService } from '../../services/services.service';
-
-type LoadState = 'loading' | 'ready' | 'error';
 
 @Component({
   selector: 'app-services-page',
@@ -48,13 +49,14 @@ export class ServicesPage {
   private readonly router = inject(Router);
   private readonly messages = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly network = inject(NetworkStatusService);
   private readonly auth = inject(AuthService);
   private readonly confirm = viewChild.required(ConfirmDialog);
   readonly lang = inject(LanguageService);
   readonly items = signal<Service[]>([]);
-  readonly status = signal<LoadState>('loading');
+  readonly status = signal<ServiceLoadState>('loading');
   readonly first = signal(0);
-  readonly rows = signal(10);
+  readonly rows = signal(SERVICE_LIST_PAGE_SIZE);
   readonly visible = computed(() => this.items().slice(this.first(), this.first() + this.rows()));
 
   readonly canUpdate = computed(() => {
@@ -98,10 +100,23 @@ export class ServicesPage {
   }
 
   protected publish(id: string, published: boolean): void {
-    this.api.setPublished(id, published);
-    this.items.update((items) =>
-      items.map((item) => (item.id === id ? { ...item, published } : item)),
-    );
+    this.api
+      .setPublished(id, published)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (saved) => {
+          this.items.update((items) =>
+            items.map((item) =>
+              item.id === id ? { ...item, ...saved, published: saved.published } : item,
+            ),
+          );
+        },
+        error: () => {
+          this.messages.add({ severity: 'error', summary: this.lang.t('common.error') });
+          // Reload to restore the switch to the server value.
+          this.load();
+        },
+      });
   }
 
   protected retry(): void {
@@ -148,11 +163,14 @@ export class ServicesPage {
           this.items.set(items);
           this.status.set('ready');
         },
-        error: () => {
+        error: (error: unknown) => {
           if (seq !== this.loadSeq) {
             return;
           }
-          this.status.set('error');
+          if (this.items().length > 0) {
+            return;
+          }
+          this.status.set(loadFailureStatus(error, this.network.online()));
         },
       });
   }

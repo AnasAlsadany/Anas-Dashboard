@@ -11,6 +11,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { MessageService } from 'primeng/api';
 import { type FileSelectEvent, FileUpload } from 'primeng/fileupload';
+import { ProgressBar } from 'primeng/progressbar';
 import { ToggleSwitch } from 'primeng/toggleswitch';
 import { Tooltip } from 'primeng/tooltip';
 
@@ -29,6 +30,7 @@ import { HomepageService } from '../../services/homepage.service';
     FormsModule,
     AppButton,
     FileUpload,
+    ProgressBar,
     ToggleSwitch,
     Tooltip,
     SectionEmpty,
@@ -54,6 +56,8 @@ export class VideoSection {
 
   readonly playing = signal(false);
   readonly saving = signal(false);
+  readonly uploadProgress = signal(0);
+  readonly uploadPhase = signal<'upload' | 'saving'>('upload');
 
   play(): void {
     if (this.enabled() && this.url()) {
@@ -61,7 +65,25 @@ export class VideoSection {
     }
   }
 
+  /** Seek preview to the 1st second so the linear overlay shows a real frame. */
+  showPreviewFrame(event: Event): void {
+    const video = event.target;
+    if (!(video instanceof HTMLVideoElement)) {
+      return;
+    }
+    if (video.readyState < HTMLMediaElement.HAVE_METADATA) {
+      return;
+    }
+    const at = Number.isFinite(video.duration) && video.duration > 0 ? Math.min(1, video.duration) : 1;
+    if (video.currentTime !== at) {
+      video.currentTime = at;
+    }
+  }
+
   toggle(enabled: boolean): void {
+    if (this.saving()) {
+      return;
+    }
     const previous = this.enabled();
     this.enabled.set(enabled);
     if (!enabled) {
@@ -102,25 +124,35 @@ export class VideoSection {
       });
       return;
     }
+    this.playing.set(false);
+    this.uploadPhase.set('upload');
+    this.uploadProgress.set(0);
     this.saving.set(true);
     this.api
       .setVideo(file)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: (content) => {
-          this.saving.set(false);
-          this.name.set(content.videoName);
-          this.url.set(content.videoUrl);
-          this.enabled.set(content.videoEnabled);
-          this.playing.set(false);
-          this.upload()?.clear();
-          this.messages.add({
-            severity: 'success',
-            summary: this.lang.t('home.toastVideoUpdateSuccess'),
-          });
+        next: (update) => {
+          this.uploadProgress.set(update.progress);
+          if (update.phase === 'done') {
+            this.saving.set(false);
+            this.uploadProgress.set(0);
+            this.name.set(update.content.videoName);
+            this.url.set(update.content.videoUrl);
+            this.enabled.set(update.content.videoEnabled);
+            this.playing.set(false);
+            this.upload()?.clear();
+            this.messages.add({
+              severity: 'success',
+              summary: this.lang.t('home.toastVideoUpdateSuccess'),
+            });
+            return;
+          }
+          this.uploadPhase.set(update.phase);
         },
         error: (error: unknown) => {
           this.saving.set(false);
+          this.uploadProgress.set(0);
           this.upload()?.clear();
           this.messages.add({
             severity: 'error',
@@ -131,6 +163,9 @@ export class VideoSection {
   }
 
   async remove(): Promise<void> {
+    if (this.saving()) {
+      return;
+    }
     const accepted = await this.confirm().ask({
       title: this.lang.t('home.deleteVideo'),
       message: this.lang.t('home.deleteVideoMessage'),

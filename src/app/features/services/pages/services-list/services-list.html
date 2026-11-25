@@ -3,7 +3,7 @@
     <app-button
       *appHasPermission="'services.create'"
       icon="pi pi-plus"
-      styleClass="services-add"
+      styleClass="app-add-btn"
       [label]="lang.t('service.add')"
       (clicked)="add()"
     />
@@ -14,8 +14,12 @@
 
     @if (status() === 'loading') {
       <app-state-view mode="loading" />
-    } @else if (status() === 'error') {
-      <app-state-view mode="error" [message]="lang.t('common.error')" (retry)="retry()" />
+    } @else if (status() === 'error' || status() === 'offline') {
+      <app-state-view
+        [mode]="status() === 'offline' ? 'offline' : 'error'"
+        [message]="lang.t('common.error')"
+        (retry)="retry()"
+      />
     } @else if (items().length === 0) {
       <app-state-view mode="empty" [message]="lang.t('service.empty')" />
     } @else {
@@ -23,6 +27,7 @@
         @for (service of visible(); track service.id) {
           <app-service-card
             [icon]="service.icon"
+            [iconUrl]="service.iconUrl"
             [title]="name(service)"
             [description]="description(service)"
             [published]="service.published"

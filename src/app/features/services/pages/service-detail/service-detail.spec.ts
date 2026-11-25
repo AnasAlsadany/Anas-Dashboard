@@ -10,7 +10,8 @@ import { AuthService } from '../../../../core/auth/auth.service';
 import { API_LATENCY_MS } from '../../../../core/config/latency';
 import { BreadcrumbService } from '../../../../core/services/breadcrumb.service';
 import { LanguageService } from '../../../../core/services/language.service';
-import { PROJECTS_SEED } from '../../../projects/services/projects.mock';
+import { PROJECTS_SEED } from '../../../projects/testing/projects.memory';
+import { ProjectsMemoryService } from '../../../projects/testing/projects.memory';
 import { ProjectsService } from '../../../projects/services/projects.service';
 import {
   blankService,
@@ -21,7 +22,8 @@ import {
   serviceWhyItem,
   type Service,
 } from '../../models/service.model';
-import { SERVICES_SEED } from '../../services/services.mock';
+import { SERVICES_SEED } from '../../testing/services.mock';
+import { ServicesMemoryService } from '../../testing/services.memory';
 import { ServicesService } from '../../services/services.service';
 import { ServiceDetailPage } from './service-detail';
 
@@ -84,6 +86,8 @@ describe('ServiceDetailPage', () => {
       providers: [
         MessageService,
         { provide: API_LATENCY_MS, useValue: 0 },
+        { provide: ServicesService, useClass: ServicesMemoryService },
+        { provide: ProjectsService, useClass: ProjectsMemoryService },
         provideRouter(
           [
             { path: 'services', component: RouteStub },
@@ -242,9 +246,10 @@ describe('ServiceDetailPage', () => {
     });
 
     it('never writes to the service when it is viewed', async () => {
-      const save = vi.spyOn(ServicesService.prototype, 'save');
-      const setPublished = vi.spyOn(ServicesService.prototype, 'setPublished');
       const { harness, root } = await open('/services/web-development');
+      const api = TestBed.inject(ServicesService);
+      const save = vi.spyOn(api, 'save');
+      const setPublished = vi.spyOn(api, 'setPublished');
       for (const label of ['حلول الخدمة', 'مشاريع الخدمة', 'القطاعات والأسئلة الشائعة']) {
         await showTab(harness, root, label);
       }
@@ -277,11 +282,11 @@ describe('ServiceDetailPage', () => {
       service.whyItems.forEach((item, index) => {
         expect(items[index]?.textContent).toContain(item.title.ar);
         expect(items[index]?.querySelector('i')?.className).toContain(
-          item.imageUrl.slice('icon:'.length),
+          item.image.ar.imageUrl.slice('icon:'.length),
         );
       });
       const photo = root.querySelector<HTMLImageElement>('.service-detail__photo');
-      expect(photo?.getAttribute('src')).toBe(service.whyImage.imageUrl);
+      expect(photo?.getAttribute('src')).toBe(service.whyImage.image.ar.imageUrl);
       expect(text(root)).toContain(service.whyImage.title.ar);
     });
 
@@ -298,8 +303,10 @@ describe('ServiceDetailPage', () => {
     });
 
     it('asks before deleting and returns to the list when confirmed', async () => {
-      const remove = vi.spyOn(ServicesService.prototype, 'remove').mockReturnValue(of(undefined));
       const { harness, root } = await open('/services/web-development');
+      const remove = vi
+        .spyOn(TestBed.inject(ServicesService), 'remove')
+        .mockReturnValue(of(undefined));
       root.querySelector<HTMLButtonElement>('.service-detail__delete')?.click();
       await settle(harness);
 
@@ -332,7 +339,7 @@ describe('ServiceDetailPage', () => {
         expect(cards[index]?.textContent).toContain(item.title.ar);
         expect(cards[index]?.textContent).toContain(item.body.ar);
         expect(cards[index]?.querySelector('i')?.className).toContain(
-          item.imageUrl.slice('icon:'.length),
+          item.image.ar.imageUrl.slice('icon:'.length),
         );
       });
     });
@@ -349,7 +356,9 @@ describe('ServiceDetailPage', () => {
         expect(cards[index]?.querySelector('.service-detail__number')?.textContent?.trim()).toBe(
           `0${index + 1}`,
         );
-        expect(cards[index]?.querySelector('img')?.getAttribute('src')).toBe(item.imageUrl);
+        expect(cards[index]?.querySelector('img')?.getAttribute('src')).toBe(
+          item.image.ar.imageUrl,
+        );
       });
     });
 
@@ -393,7 +402,9 @@ describe('ServiceDetailPage', () => {
       const cards = [...root.querySelectorAll('app-sector-card')];
       expect(cards).toHaveLength(service.sectors.length);
       service.sectors.forEach((sector, index) => {
-        expect(cards[index]?.querySelector('img')?.getAttribute('src')).toBe(sector.imageUrl);
+        expect(cards[index]?.querySelector('img')?.getAttribute('src')).toBe(
+          sector.image.ar.imageUrl,
+        );
         expect(cards[index]?.textContent).toContain(`قطاع ${index + 1}`);
       });
       const tools = [...root.querySelectorAll<HTMLButtonElement>('app-sector-card button')];
@@ -411,8 +422,20 @@ describe('ServiceDetailPage', () => {
 
     it('leaves out a sector that has no drawable picture instead of an unreadable tile', async () => {
       const sectors = [
-        { ...serviceSector(), imageName: 'a.png', imageUrl: '/images/a.png' },
-        { ...serviceSector(), imageName: 'pi-star', imageUrl: 'icon:pi-star' },
+        {
+          ...serviceSector(),
+          image: {
+            ar: { imageName: 'a.png', imageUrl: '/images/a.png', imageUuid: null },
+            en: { imageName: 'a.png', imageUrl: '/images/a.png', imageUuid: null },
+          },
+        },
+        {
+          ...serviceSector(),
+          image: {
+            ar: { imageName: 'pi-star', imageUrl: 'icon:pi-star', imageUuid: null },
+            en: { imageName: 'pi-star', imageUrl: 'icon:pi-star', imageUuid: null },
+          },
+        },
         serviceSector(),
       ];
       const service: Service = { ...seed('web-development'), sectors };
@@ -499,12 +522,14 @@ describe('ServiceDetailPage', () => {
       const ids = seed('web-development').projectIds;
       const cards = [...root.querySelectorAll<HTMLAnchorElement>('.service-detail__project')];
       expect(cards).toHaveLength(ids.length);
-      expect(root.querySelector('.service-detail__add-project')).not.toBeNull();
+      expect(root.querySelector('.app-add-btn')).not.toBeNull();
       ids.forEach((id, index) => {
         const project = PROJECTS_SEED.find((item) => item.id === id);
         expect(cards[index]?.textContent).toContain(project?.name.ar);
         expect(cards[index]?.getAttribute('href')).toBe(`/projects/${id}`);
-        expect(cards[index]?.querySelector('img')?.getAttribute('src')).toBe(project?.coverUrl);
+        expect(cards[index]?.querySelector('img')?.getAttribute('src')).toBe(
+          project?.cover.ar.imageUrl,
+        );
         expect(cards[index]?.querySelector('p-toggleswitch')).not.toBeNull();
       });
       expect(text(root)).not.toContain('لم تعد متوفرة');

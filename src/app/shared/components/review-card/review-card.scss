@@ -20,6 +20,7 @@
 .review-card__head {
   display: flex;
   align-items: flex-start;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 10px;
 }
@@ -27,7 +28,7 @@
 .review-card__person {
   display: flex;
   min-width: 0;
-  flex: 1;
+  flex: 1 1 160px;
   align-items: center;
   gap: 10px;
 }

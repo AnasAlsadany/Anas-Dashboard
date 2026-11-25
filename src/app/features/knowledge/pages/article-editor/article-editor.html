@@ -118,6 +118,7 @@
                 <label class="field">
                   <span class="field__label">{{ ct('knowledge.fieldCategory') }}</span>
                   <p-select
+                    [ariaLabel]="ct('knowledge.fieldCategory')"
                     [fluid]="true"
                     formControlName="categoryId"
                     [options]="categoryOptions()"
@@ -150,6 +151,7 @@
                 <label class="field">
                   <span class="field__label">{{ ct('knowledge.fieldReading') }}</span>
                   <p-select
+                    [ariaLabel]="ct('knowledge.fieldReading')"
                     [fluid]="true"
                     formControlName="readingMinutes"
                     [options]="readingOptions()"

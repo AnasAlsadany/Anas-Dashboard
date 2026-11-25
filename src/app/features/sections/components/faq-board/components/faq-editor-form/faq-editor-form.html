@@ -76,6 +76,7 @@
     <label class="field">
       <span class="field__label">{{ lang.t('faq.category') }}</span>
       <p-select
+        [ariaLabel]="lang.t('faq.category')"
         [fluid]="true"
         formControlName="categoryId"
         [options]="categoryOptions()"
@@ -88,6 +89,7 @@
     <label class="field">
       <span class="field__label">{{ lang.t('faq.order') }}</span>
       <p-select
+        [ariaLabel]="lang.t('faq.order')"
         [fluid]="true"
         formControlName="order"
         [options]="orderOptions"

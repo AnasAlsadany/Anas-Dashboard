@@ -42,9 +42,15 @@
 
 .app-paginator .p-paginator-pages {
   display: inline-flex;
-  direction: rtl;
+  // Page numbers follow the document direction: 1 2 in LTR, 2 1 (read right
+  // to left as 1 2) in RTL. The container itself stays LTR (see above).
+  direction: ltr;
   gap: 8px;
   order: 2;
+}
+
+[dir='rtl'] .app-paginator .p-paginator-pages {
+  direction: rtl;
 }
 
 .app-paginator .p-paginator-next {

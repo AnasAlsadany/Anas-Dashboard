@@ -107,7 +107,7 @@ describe('ProductEditor', () => {
 
     expect(document.documentElement.dir).toBe('rtl');
     expect(root.querySelector('.editor-card')?.getAttribute('dir')).toBe('ltr');
-    expect(root.textContent).toContain('إضافة منتج جديد');
+    expect(root.textContent).toContain('Add A New Product');
     expect(root.textContent).toContain('Product Title');
     expect(root.textContent).toContain('Product Features');
     expect(root.textContent).toContain('Add A Feature');

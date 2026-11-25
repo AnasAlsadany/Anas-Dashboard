@@ -5,6 +5,7 @@ import {
   computed,
   inject,
   input,
+  model,
   output,
   signal,
 } from '@angular/core';
@@ -77,7 +78,11 @@ export class ReviewEditorForm {
   readonly mode = input.required<ReviewEditorMode>();
   readonly submitted = output<void>();
 
-  readonly locale = signal<AppLanguage>(this.lang.language());
+  readonly locale = model<AppLanguage>(this.lang.language());
+  protected ct(key: string): string {
+    return this.lang.lookup(key, this.locale()) ?? this.lang.t(key);
+  }
+
   readonly avatar = signal<UploadedImageMeta | null>(null);
   readonly avatarPreview = signal<string | null>(null);
   readonly avatarError = signal('');

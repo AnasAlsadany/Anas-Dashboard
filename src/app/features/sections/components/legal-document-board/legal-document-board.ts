@@ -82,6 +82,10 @@ export class LegalDocumentBoard {
   readonly saving = signal(false);
   readonly document = signal<LegalDocument | null>(null);
   readonly locale = signal<AppLanguage>('ar');
+
+  protected ct(key: string): string {
+    return this.lang.lookup(key, this.locale()) ?? this.lang.t(key);
+  }
   readonly draftAr = signal('');
   readonly draftEn = signal('');
 
@@ -100,28 +104,28 @@ export class LegalDocumentBoard {
   });
 
   readonly contentTitle = computed(() => {
-    this.lang.language();
-    return this.lang.t(this.contentTitleKey());
+    this.locale();
+    return this.ct(this.contentTitleKey());
   });
 
   readonly emptyTitle = computed(() => {
-    this.lang.language();
-    return this.lang.t(this.emptyTitleKey());
+    this.locale();
+    return this.ct(this.emptyTitleKey());
   });
 
   readonly emptyHint = computed(() => {
-    this.lang.language();
-    return this.lang.t(this.emptyHintKey());
+    this.locale();
+    return this.ct(this.emptyHintKey());
   });
 
   readonly writeLabel = computed(() => {
-    this.lang.language();
-    return this.lang.t(this.writeLabelKey());
+    this.locale();
+    return this.ct(this.writeLabelKey());
   });
 
   readonly placeholder = computed(() => {
-    this.lang.language();
-    return this.lang.t(this.placeholderKey());
+    this.locale();
+    return this.ct(this.placeholderKey());
   });
 
   readonly hasContent = computed(() => {

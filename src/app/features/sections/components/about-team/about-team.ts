@@ -126,6 +126,10 @@ export class AboutTeamSection {
   readonly saving = signal(false);
   readonly editingId = signal<string | null>(null);
   readonly locale = signal<AppLanguage>('ar');
+
+  protected ct(key: string): string {
+    return this.lang.lookup(key, this.locale()) ?? this.lang.t(key);
+  }
   readonly image = signal<AboutImage | null>(null);
   readonly imageError = signal('');
   readonly navAtStart = signal(true);

@@ -180,10 +180,9 @@ export class ArticleEditor {
   readonly suffix = computed(() => (this.locale() === 'ar' ? 'Ar' : 'En'));
   readonly dir = computed(() => (this.locale() === 'ar' ? 'rtl' : 'ltr'));
 
-  readonly title = computed(() => {
-    this.lang.language();
-    return this.lang.t(this.mode === 'edit' ? 'knowledge.edit' : 'knowledge.add');
-  });
+  readonly title = computed(() =>
+    this.ct(this.mode === 'edit' ? 'knowledge.edit' : 'knowledge.add'),
+  );
 
   readonly categoryOptions = computed(() => {
     const locale = this.lang.language();

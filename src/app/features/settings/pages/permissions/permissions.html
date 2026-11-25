@@ -1,0 +1,48 @@
+<section class="page permissions-page">
+  <app-page-header
+    [title]="lang.t('nav.permissions')"
+    [subtitle]="lang.t('settings.permissionsSubtitle')"
+  >
+    <app-button
+      *appHasPermission="'roles.create'"
+      icon="pi pi-plus"
+      iconPos="end"
+      styleClass="permissions-add"
+      [label]="lang.t('settings.addRole')"
+      (clicked)="openCreate()"
+    />
+  </app-page-header>
+
+  <app-permissions-matrix
+    [resources]="resources"
+    [actions]="actions"
+    [roleOptions]="roleOptions()"
+    [grants]="selected().grants"
+    [canDelete]="roles().length >= 2"
+    [showUpdate]="canUpdate()"
+    [showDelete]="canDelete()"
+    [(selectedId)]="selectedId"
+    (save)="save()"
+    (remove)="removeRole()"
+    (grantChange)="setGrant($event.resourceId, $event.action, $event.value)"
+  />
+
+  <app-modal
+    [(visible)]="editorOpen"
+    [title]="lang.t('settings.addRole')"
+    icon="pi pi-shield"
+    saveIcon="pi pi-plus"
+    saveIconPos="start"
+    [saveLabel]="lang.t('settings.addRoleSubmit')"
+    [saveDisabled]="!draftName().trim()"
+    (save)="saveRole()"
+  >
+    <app-permissions-role-form
+      [modules]="modules"
+      [(draftName)]="draftName"
+      [(draftModules)]="draftModules"
+    />
+  </app-modal>
+
+  <app-confirm-dialog />
+</section>

@@ -89,6 +89,17 @@ describe('UsersPage', () => {
     expect(fixture.nativeElement.textContent).toContain('نورة القحطاني');
   });
 
+  it('shows the comparison caption only for cards whose stat has a change percentage', async () => {
+    const fixture = await render({
+      stats: () => of({ ...STATS, total: { value: 4, previous: 2, changePct: 100 } }),
+    });
+    const cards = fixture.componentInstance.cards();
+    expect(cards[0]).toMatchObject({ trend: 100, trendDirection: 'up' });
+    expect(cards[0].caption).not.toBe('');
+    expect(cards[1].trend).toBeUndefined();
+    expect(cards[1].caption).toBe('');
+  });
+
   it('maps a list failure to the error state while online', async () => {
     const fixture = await render({
       list: () => throwError(() => new Error('boom')),

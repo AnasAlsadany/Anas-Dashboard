@@ -39,7 +39,11 @@ export class LanguageService {
     const language = this.language();
     document.documentElement.lang = language;
     document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
-    this.primeng.setTranslation(language === 'ar' ? PRIMENG_AR : this.primengEnglish);
+    this.primeng.setTranslation(
+      language === 'ar'
+        ? { ...PRIMENG_AR, aria: { ...this.primengEnglish.aria, ...PRIMENG_AR.aria } }
+        : this.primengEnglish,
+    );
   }
 
   private read(): AppLanguage {

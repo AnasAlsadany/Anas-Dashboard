@@ -55,4 +55,20 @@ export const PRIMENG_AR: Translation = {
   nextYear: 'السنة التالية',
   prevMonth: 'الشهر السابق',
   nextMonth: 'الشهر التالي',
+  // Accessible names only (paginator, close, previous/next). `LanguageService` merges these
+  // over PrimeNG's English aria set, so labels not listed here keep their defaults.
+  aria: {
+    close: 'إغلاق',
+    previous: 'السابق',
+    next: 'التالي',
+    navigation: 'التنقل',
+    firstPageLabel: 'الصفحة الأولى',
+    lastPageLabel: 'الصفحة الأخيرة',
+    nextPageLabel: 'الصفحة التالية',
+    prevPageLabel: 'الصفحة السابقة',
+    previousPageLabel: 'الصفحة السابقة',
+    rowsPerPageLabel: 'عدد الصفوف في الصفحة',
+    jumpToPageDropdownLabel: 'الانتقال إلى صفحة',
+    jumpToPageInputLabel: 'إدخال رقم الصفحة',
+  },
 };

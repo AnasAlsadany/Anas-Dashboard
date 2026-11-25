@@ -169,7 +169,6 @@ function bindCustomToolbarControl(
     return;
   }
 
-  // Prefer Quill's attach now that the handler exists in toolbar.handlers.
   if (typeof toolbar.attach === 'function') {
     toolbar.attach(button);
     return;
@@ -185,26 +184,16 @@ function bindCustomToolbarControl(
   });
 }
 
-/** Apply RTL/LTR on the editable root (not only the surrounding shell). */
 export function applyQuillDirection(quill: AppQuill, locale: 'ar' | 'en'): void {
   const dir = locale === 'ar' ? 'rtl' : 'ltr';
   quill.root.setAttribute('dir', dir);
   quill.root.style.direction = dir;
 }
 
-/** True when HTML contains visible text after stripping tags. */
 export function hasVisibleHtml(value: string): boolean {
   return value.replace(/<[^>]*>/g, '').trim().length > 0;
 }
 
-/**
- * Quill 2 getSemanticHTML() writes every ordinary space as the `&nbsp;` entity,
- * which stops saved text from wrapping. A space the author typed as a real
- * non-breaking space comes out as the literal U+00A0 character, so the entity
- * form can be told apart. Turn the entity back into an ordinary space, except
- * where a plain space would collapse in HTML and change what is shown: the
- * second space of a run, and spaces at the start or end of a block or tag.
- */
 export function restoreBreakableSpaces(html: string): string {
   const blockStart = /(?:^|<(?:p|h[1-6]|li|blockquote|pre|div)(?:\s[^>]*)?>|<br\s*\/?>)$/i;
   const blockEnd = /^(?:$|<\/(?:p|h[1-6]|li|blockquote|pre|div)>|<br\s*\/?>)/i;

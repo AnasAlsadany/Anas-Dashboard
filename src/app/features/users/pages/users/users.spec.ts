@@ -72,7 +72,6 @@ describe('UsersPage', () => {
     localStorage.setItem('codetech.language', 'ar');
     const fixture = TestBed.createComponent(UsersPage);
     fixture.detectChanges();
-    // listQuery is debounced 200ms in UsersPage before the HTTP call.
     await flushDelay(220);
     await flushUi(fixture);
     return fixture;

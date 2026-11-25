@@ -132,13 +132,6 @@ export class LegalDocumentBoard {
     return hasVisibleHtml(doc.content.ar) || hasVisibleHtml(doc.content.en);
   });
 
-  /**
-   * View-mode HTML. Quill stores text color as inline `style`; Angular's default
-   * sanitizer would strip that and show black text. We allowlist-sanitize first
-   * (scripts / handlers / unsafe CSS out, color styles kept), then mark SafeHtml.
-   * View falls back to the other locale only when the selected one is empty.
-   * Edit mode never uses this fallback — drafts stay independent.
-   */
   readonly viewingHtml = computed<SafeHtml | null>(() => {
     const doc = this.document();
     if (!doc) {
@@ -160,8 +153,6 @@ export class LegalDocumentBoard {
 
   constructor() {
     this.locale.set(this.lang.language());
-
-    // switchMap cancels the previous get() so a slow response cannot overwrite
 
     toObservable(this.kind)
       .pipe(

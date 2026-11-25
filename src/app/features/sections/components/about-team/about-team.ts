@@ -106,7 +106,6 @@ export class AboutTeamSection {
   readonly team = input.required<AboutMember[]>();
   readonly changed = output<AboutMember[]>();
 
-  /** Matches the previous 4 / 2 / 1 column layout. */
   private readonly teamSwiper: SwiperOptions = {
     slidesPerView: 1,
     spaceBetween: 12,

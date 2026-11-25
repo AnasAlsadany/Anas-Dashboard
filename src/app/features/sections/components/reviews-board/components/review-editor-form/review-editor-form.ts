@@ -84,7 +84,6 @@ export class ReviewEditorForm {
   readonly video = signal<UploadedVideoMeta | null>(null);
   readonly videoError = signal('');
 
-  /** Picked File for coat-check upload (never a display URL). */
   private readonly avatarFile = signal<File | null>(null);
   private readonly videoFile = signal<File | null>(null);
 
@@ -148,7 +147,6 @@ export class ReviewEditorForm {
     }
   }
 
-  /** Coat-check intents for the parent save call. */
   mediaDraft(): ReviewMediaDraft {
     return {
       photo: this.photoIntent(),

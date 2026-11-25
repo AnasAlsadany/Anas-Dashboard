@@ -6,7 +6,6 @@ import { TRANSLATIONS } from './translations';
 describe('translations', () => {
   it('keeps every key in Arabic and English', () => {
     const keys = Object.keys(TRANSLATIONS);
-    // Catalog grows with features; assert parity and content, not a brittle absolute count.
     expect(keys.length).toBeGreaterThanOrEqual(1147);
     for (const [key, value] of Object.entries(TRANSLATIONS)) {
       expect(value, key).toBeDefined();

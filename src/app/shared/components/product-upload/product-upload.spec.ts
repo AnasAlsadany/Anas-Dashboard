@@ -131,7 +131,6 @@ describe('ProductUpload', () => {
   }
 
   function pick(fixture: ReturnType<typeof create>, name = 'a.png', type = 'image/png'): void {
-    // Library mode hides the file input; switch back to upload when actions are on.
     const uploadTab = [
       ...fixture.nativeElement.querySelectorAll('.uploader__action'),
     ] as HTMLButtonElement[];
@@ -200,7 +199,6 @@ describe('ProductUpload', () => {
       pick(fixture, 'ar.png');
       expect(fixture.componentInstance.url).toBe('blob:test/1');
 
-      // Simulate locale / list reuse: same control instance, different media slot.
       fixture.componentInstance.url = '';
       fixture.componentInstance.name = '';
       refresh(fixture);

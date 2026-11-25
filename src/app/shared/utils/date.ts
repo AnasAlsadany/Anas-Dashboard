@@ -11,7 +11,6 @@ export function fromIsoDate(value: string): Date {
 
 const DATE_TIME_PATTERN = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/;
 
-/** True when the value carries a time part (e.g. an ISO timestamp from the API). */
 export function hasTimePart(value: string): boolean {
   return DATE_TIME_PATTERN.test(value);
 }

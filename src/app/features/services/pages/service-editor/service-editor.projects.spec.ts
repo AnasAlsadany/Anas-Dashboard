@@ -139,10 +139,6 @@ describe('ServiceEditor', () => {
       projectIds: ['wasly', 'deleted-project'],
     });
 
-    // Empty/error/loading prune rules are covered by `service-editor-persist` /
-    // `service-editor-projects` and the earlier `related projects` describe
-    // (`drops references…`, `keeps every reference when the project list cannot be loaded`).
-
     it('recovers pruning after a retry succeeds', async () => {
       let attempts = 0;
       const list = vi.fn(() => {

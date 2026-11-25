@@ -59,7 +59,6 @@ export class ConfirmDialog {
     this.finish(false);
   }
 
-  /** The built-in Escape handling is off because the dialog has no close button. */
   @HostListener('document:keydown.escape')
   onEscape(): void {
     if (this.visible()) {

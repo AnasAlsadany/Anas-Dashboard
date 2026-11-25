@@ -9,7 +9,6 @@ const STORAGE_KEY = 'codetech.language';
 @Injectable({ providedIn: 'root' })
 export class LanguageService {
   private readonly primeng = inject(PrimeNG);
-  // PrimeNG ships English; keep its defaults so switching back restores them exactly.
   private readonly primengEnglish = { ...this.primeng.translation };
   readonly language = signal<AppLanguage>(this.read());
 

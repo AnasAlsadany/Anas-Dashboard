@@ -841,8 +841,6 @@ export class ProductEditor {
         error: (error: unknown) => {
           if (isApiError(error) && error.kind === 'validation') {
             this.applyServerErrors(error.fieldErrors);
-            // A rejected image upload (POST admin/media) reports on `file` or `type`,
-            // which have no input of their own, so it must be shown as a message.
             const uploadFailed = 'file' in error.fieldErrors || 'type' in error.fieldErrors;
             if (uploadFailed || Object.keys(error.fieldErrors).length === 0) {
               this.messages.add({

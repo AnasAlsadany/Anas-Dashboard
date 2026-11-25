@@ -77,7 +77,6 @@ describe('ArticlesPanel statistics cards', () => {
       icon: 'pi pi-file',
       iconColor: '#e11d48',
       iconBackground: '#ffe4e6',
-      // No change_pct from the API: no invented trend and no dangling caption.
       trend: undefined,
       caption: '',
     });

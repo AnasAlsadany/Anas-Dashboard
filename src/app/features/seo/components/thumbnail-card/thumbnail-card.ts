@@ -107,7 +107,6 @@ export class ThumbnailCard {
       return;
     }
     this.errorKey.set('');
-    // Service owns blob lifecycle and mirrors the thumbnail across locales.
     this.seo.setThumbnail(this.pageId(), file, URL.createObjectURL(file));
   }
 }

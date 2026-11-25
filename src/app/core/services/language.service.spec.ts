@@ -29,7 +29,6 @@ describe('LanguageService', () => {
     const { lang, primeng } = create();
     expect(primeng.translation.aria?.nextPageLabel).toBe('الصفحة التالية');
     expect(primeng.translation.aria?.prevPageLabel).toBe('الصفحة السابقة');
-    // labels that are not translated keep PrimeNG's defaults instead of disappearing
     expect(primeng.translation.aria?.trueLabel).toBe('True');
     lang.set('en');
     expect(primeng.translation.aria?.nextPageLabel).toBe('Next Page');

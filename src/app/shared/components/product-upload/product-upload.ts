@@ -41,17 +41,13 @@ export class ProductUpload {
 
   protected readonly icons = ICON_LIBRARY_IDS;
 
-  /** Blob URL this control currently owns for the bound media slot. */
   private ownedByControl = '';
 
   constructor() {
     effect(() => {
       const bound = this.url();
-      // Parent rebound this control (locale switch / list reuse). Retarget
-      // ownership without releasing — the draft still holds those blobs.
       if (bound !== this.ownedByControl) {
         this.ownedByControl = bound.startsWith('blob:') ? bound : '';
-        // Show library tab as primary when rebound media is a library icon.
         if (bound.startsWith('icon:')) {
           this.source.set('library');
         }

@@ -548,7 +548,6 @@ export class UsersPage {
       icon,
       iconColor,
       iconBackground,
-      // The caption only explains the percentage, so it is hidden when the API sends none.
       caption: trend == null ? '' : caption,
       ...(trend == null
         ? {}

@@ -107,7 +107,6 @@
         </div>
       } @else if (viewingHtml(); as html) {
         <div class="legal-doc__shell">
-          <!-- SafeHtml after sanitizeRichTextHtml (keeps Quill color styles). -->
           <div
             class="legal-doc__text"
             [attr.dir]="locale() === 'ar' ? 'rtl' : 'ltr'"

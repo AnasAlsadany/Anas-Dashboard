@@ -10,7 +10,6 @@
   color: var(--app-muted);
 }
 
-// Password visibility button, positioned over the end of the PrimeNG icon field.
 .field__toggle {
   position: absolute;
   top: 50%;
@@ -87,8 +86,6 @@
   gap: 14px;
 }
 
-// Date picker month arrows: PrimeNG draws previous as a left chevron, which points the
-// wrong way in a right-to-left calendar where previous sits on the right.
 html[dir='rtl'] .p-datepicker-prev-button .p-icon,
 html[dir='rtl'] .p-datepicker-next-button .p-icon {
   transform: scaleX(-1);

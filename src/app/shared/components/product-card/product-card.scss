@@ -235,8 +235,6 @@
   box-shadow: 0 8px 18px rgb(15 23 42 / 12%);
 }
 
-// Narrow phones: two tiles per row leave about 100px for the text, which breaks words
-// mid-letter. Stack the tiles instead.
 @media (max-width: 480px) {
   .feature-grid {
     grid-template-columns: minmax(0, 1fr);

@@ -298,8 +298,6 @@ export class ArticleEditor {
 
   protected onEditorInit(event: EditorInitEvent, field: 'contentAr' | 'contentEn'): void {
     const quill = event.editor as AppQuill;
-    // PrimeNG writes Quill's semantic HTML, where every space is a non-breaking space entity.
-    // Replace it with the same HTML with breakable spaces so saved text can wrap.
     quill.on?.('text-change', (_delta, _old, source) => {
       if (source !== 'user') {
         return;

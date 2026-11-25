@@ -112,6 +112,7 @@ a.app-add-btn .pi {
   transform: none;
 }
 
+.forgot-form[dir='rtl'] .back-btn .p-button-icon,
 .verify-form[dir='rtl'] .back-btn .p-button-icon {
   transform: rotate(-180deg);
 }

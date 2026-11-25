@@ -21,6 +21,10 @@ export interface AppQuill {
   setSelection: (index: number, length?: number) => void;
   history: { undo: () => void; redo: () => void };
   getModule: (name: string) => QuillToolbarModule;
+  on?: (
+    event: 'text-change',
+    handler: (delta: unknown, old: unknown, source: string) => void,
+  ) => void;
 }
 
 export type QuillImageUploader = (file: File) => Promise<string>;
@@ -60,7 +64,7 @@ export function resetQuillFontRegistrationForTests(): void {
 
 export function readQuillHtml(quill: AppQuill): string {
   if (typeof quill.getSemanticHTML === 'function') {
-    return quill.getSemanticHTML();
+    return restoreBreakableSpaces(quill.getSemanticHTML());
   }
   return quill.root.innerHTML;
 }
@@ -191,4 +195,30 @@ export function applyQuillDirection(quill: AppQuill, locale: 'ar' | 'en'): void 
 /** True when HTML contains visible text after stripping tags. */
 export function hasVisibleHtml(value: string): boolean {
   return value.replace(/<[^>]*>/g, '').trim().length > 0;
+}
+
+/**
+ * Quill 2 getSemanticHTML() writes every ordinary space as the `&nbsp;` entity,
+ * which stops saved text from wrapping. A space the author typed as a real
+ * non-breaking space comes out as the literal U+00A0 character, so the entity
+ * form can be told apart. Turn the entity back into an ordinary space, except
+ * where a plain space would collapse in HTML and change what is shown: the
+ * second space of a run, and spaces at the start or end of a block or tag.
+ */
+export function restoreBreakableSpaces(html: string): string {
+  const blockStart = /(?:^|<(?:p|h[1-6]|li|blockquote|pre|div)(?:\s[^>]*)?>|<br\s*\/?>)$/i;
+  const blockEnd = /^(?:$|<\/(?:p|h[1-6]|li|blockquote|pre|div)>|<br\s*\/?>)/i;
+  return html.replace(/(?:&nbsp;)+/g, (run, offset: number) => {
+    const before = html.slice(0, offset);
+    const after = html.slice(offset + run.length);
+    if (blockStart.test(before) || blockEnd.test(after)) {
+      return run;
+    }
+    const count = run.length / '&nbsp;'.length;
+    let out = '';
+    for (let i = 0; i < count; i += 1) {
+      out += i % 2 === 0 ? ' ' : '&nbsp;';
+    }
+    return out;
+  });
 }

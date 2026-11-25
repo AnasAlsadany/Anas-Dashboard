@@ -389,7 +389,7 @@
                 styleClass="kb-editor__quill-root"
                 [placeholder]="ct('knowledge.fieldContentPh')"
                 [style]="{ minHeight: '420px' }"
-                (onInit)="onEditorInit($event)"
+                (onInit)="onEditorInit($event, 'contentAr')"
               >
                 <p-header>
                   <ng-container [ngTemplateOutlet]="toolbar" />
@@ -401,7 +401,7 @@
                 styleClass="kb-editor__quill-root"
                 [placeholder]="ct('knowledge.fieldContentPh')"
                 [style]="{ minHeight: '420px' }"
-                (onInit)="onEditorInit($event)"
+                (onInit)="onEditorInit($event, 'contentEn')"
               >
                 <p-header>
                   <ng-container [ngTemplateOutlet]="toolbar" />

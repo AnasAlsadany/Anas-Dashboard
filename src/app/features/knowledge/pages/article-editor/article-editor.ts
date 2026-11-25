@@ -41,6 +41,7 @@ import {
   QUILL_FONT_REGISTRAR,
   applyQuillDirection,
   hasVisibleHtml,
+  readQuillHtml,
   wireQuillToolbarHandlers,
   type AppQuill,
 } from '../../../../shared/editor/quill';
@@ -295,8 +296,19 @@ export class ArticleEditor {
     this.keywordRevision.update((n) => n + 1);
   }
 
-  protected onEditorInit(event: EditorInitEvent): void {
+  protected onEditorInit(event: EditorInitEvent, field: 'contentAr' | 'contentEn'): void {
     const quill = event.editor as AppQuill;
+    // PrimeNG writes Quill's semantic HTML, where every space is a non-breaking space entity.
+    // Replace it with the same HTML with breakable spaces so saved text can wrap.
+    quill.on?.('text-change', (_delta, _old, source) => {
+      if (source !== 'user') {
+        return;
+      }
+      const html = readQuillHtml(quill);
+      this.form.controls[field].setValue(html === '<p><br></p>' ? '' : html, {
+        emitModelToViewChange: false,
+      });
+    });
     wireQuillToolbarHandlers(quill, {
       uploadImage: (file) =>
         firstValueFrom(this.media.uploadEditorImage(file)).then((uploaded) => uploaded.url),

@@ -1,4 +1,8 @@
 export const en = {
+  'notFound.title': 'Page Not Found',
+  'notFound.hint': 'The link you opened is wrong or the page was moved.',
+  'notFound.back': 'Back To Home',
+  'breadcrumb.details': 'Details',
   'nav.home': 'Home',
   'nav.about': 'About CodeTech',
   'nav.contact': 'Contact Requests',

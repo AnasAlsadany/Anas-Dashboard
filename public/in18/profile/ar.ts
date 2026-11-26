@@ -19,6 +19,7 @@ export const ar: { [K in keyof typeof en]: string } = {
   'profile.usernameInvalid': '3 إلى 30 حرفاً: حروف إنجليزية وأرقام و _ و . فقط',
   'profile.phoneRequired': 'رقم الهاتف مطلوب',
   'profile.phoneInvalid': 'رقم هاتف غير صالح',
+  'profile.checkFields': 'راجع الحقول المحددة',
   'profile.changePhoto': 'تغيير الصورة',
   'profile.removePhoto': 'حذف الصورة',
   'profile.photoUpdated': 'تم تحديث الصورة',

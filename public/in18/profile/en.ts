@@ -17,6 +17,7 @@ export const en = {
   'profile.usernameInvalid': '3 To 30 Characters: Letters, Numbers, _ And . Only',
   'profile.phoneRequired': 'Phone Number Is Required',
   'profile.phoneInvalid': 'Invalid Phone Number',
+  'profile.checkFields': 'Please Check The Highlighted Fields',
   'profile.changePhoto': 'Change Picture',
   'profile.removePhoto': 'Remove Picture',
   'profile.photoUpdated': 'Picture Updated',

@@ -1,6 +1,10 @@
 import type { en } from './en';
 
 export const ar: { [K in keyof typeof en]: string } = {
+  'notFound.title': 'الصفحة غير موجودة',
+  'notFound.hint': 'الرابط الذي فتحته غير صحيح أو تم نقل الصفحة.',
+  'notFound.back': 'العودة للرئيسية',
+  'breadcrumb.details': 'التفاصيل',
   'nav.home': 'الرئيسية',
   'nav.about': 'عن كود التقنية',
   'nav.contact': 'طلبات التواصل',

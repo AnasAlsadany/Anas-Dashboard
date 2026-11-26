@@ -132,6 +132,7 @@ export class ArticleEditor {
 
   readonly flagged = signal<ReadonlySet<string>>(new Set());
   readonly quillReady = signal(false);
+  readonly justSaved = signal(false);
 
   readonly keywordDraft = signal('');
 
@@ -211,6 +212,10 @@ export class ArticleEditor {
       () => this.quillReady.set(true),
       () => this.quillReady.set(true),
     );
+
+    this.form.valueChanges
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.justSaved.set(false));
 
     this.api
       .listCategories()
@@ -341,6 +346,11 @@ export class ArticleEditor {
   }
 
   protected save(): void {
+    if (this.justSaved()) {
+      document.querySelector<HTMLElement>('.kb-editor__quill .ql-editor')?.focus();
+      this.justSaved.set(false);
+      return;
+    }
     const status = this.article()?.status ?? 'draft';
     if (this.validate(status === 'published' ? 'strict' : 'lenient')) {
       this.persist(status);
@@ -482,6 +492,7 @@ export class ArticleEditor {
         this.saving.set(false);
         if (this.mode === 'edit') {
           this.apply(saved);
+          this.justSaved.set(true);
           this.messages.add({ severity: 'success', summary: this.lang.t('knowledge.saved') });
           return;
         }
